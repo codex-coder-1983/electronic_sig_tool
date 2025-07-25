@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upload PDF and Signature</title>
+</head>
+<body>
+    <h2>Upload a PDF and Your Signature</h2>
+    <form method="post" enctype="multipart/form-data">
+        <label for="pdf">PDF Document:</label><br>
+        <input type="file" name="pdf" accept=".pdf" required><br><br>
+
+        <label for="signature">Signature Image (.png, .jpg):</label><br>
+        <input type="file" name="signature" accept=".png,.jpg,.jpeg" required><br><br>
+
+        <button type="submit">Upload and Sign</button>
+    </form>
+</body>
+</html>
