@@ -1,37 +1,33 @@
-<!-- templates/admin.html -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Admin: Upload PDF and Add Signers</title>
+    <title>Admin Panel - Upload PDF</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 30px;
+        }
+        form {
+            border: 1px solid #ccc;
+            padding: 20px;
+            width: 400px;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
+        input[type="file"] {
+            margin-bottom: 15px;
+        }
+    </style>
 </head>
 <body>
-    <h2>Upload PDF and Define Signers</h2>
+    <h2>Admin Panel</h2>
+    <p>Upload a PDF to begin assigning signature positions.</p>
+
     <form method="POST" enctype="multipart/form-data">
-        <label>Select PDF to be signed:</label><br>
-        <input type="file" name="pdf" accept="application/pdf" required><br><br>
+        <label for="pdf">Select PDF:</label><br>
+        <input type="file" name="pdf" accept=".pdf" required><br><br>
 
-        <h3>Add Signers</h3>
-        <div id="signers">
-            <div class="signer">
-                Name: <input type="text" name="name[]" required>
-                X: <input type="number" name="x[]" required>
-                Y: <input type="number" name="y[]" required>
-            </div>
-        </div>
-
-        <button type="button" onclick="addSigner()">+ Add Another Signer</button><br><br>
-        <input type="submit" value="Submit">
+        <input type="submit" value="Upload and Set Signers">
     </form>
-
-    <script>
-        function addSigner() {
-            const div = document.createElement('div');
-            div.className = 'signer';
-            div.innerHTML = `Name: <input type="text" name="name[]" required>
-                             X: <input type="number" name="x[]" required>
-                             Y: <input type="number" name="y[]" required>`;
-            document.getElementById('signers').appendChild(div);
-        }
-    </script>
 </body>
 </html>

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Place Signatures</title>
+    <style>
+        img {
+            max-width: 100%;
+            border: 2px solid #aaa;
+            cursor: crosshair;
+        }
+        #dot {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: red;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            display: none;
+        }
+        .modal, .confirm-modal {
+            display: none;
+            position: fixed;
+            z-index: 100;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        .modal-content, .confirm-content {
+            background-color: #fff;
+            margin: 10% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 300px;
+            text-align: center;
+            border-radius: 10px;
+            position: relative;
+        }
+        .close {
+            color: #aaa;
+            position: absolute;
+            right: 12px;
+            top: 8px;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        table {
+            margin-top: 20px;
+            border-collapse: collapse;
+            width: 100%;
+        }
+        table, th, td {
+            border: 1px solid #aaa;
+        }
+        th, td {
+            padding: 8px;
+            text-align: center;
+        }
+        h3 {
+            margin-top: 40px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Click on the image to place a signature</h2>
+
+    <div style="position: relative;">
+        <img id="pdfImage" src="{{ url_for('static', filename='preview.jpg') }}">
+        <div id="dot"></div>
+    </div>
+
+    <!-- Modal for entering signer name -->
+    <div id="nameModal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="modalClose">&times;</span>
+            <form id="signerForm">
+                <label>Signer Name:</label><br>
+                <input type="text" name="name" id="signerName" required><br><br>
+                <input type="hidden" name="x" id="xCoord">
+                <input type="hidden" name="y" id="yCoord">
+                <button type="submit">Save</button>
+                <div id="status" class="success"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="confirm-modal">
+        <div class="confirm-content">
+            <span class="close" id="confirmClose">&times;</span>
+            <p><strong>✅ Signer added!</strong></p>
+            <p>Do you want to add another signer?</p>
+            <button id="confirmOK">OK</button>
+        </div>
+    </div>
+
+    <!-- Signer List -->
+    <h3>🧾 List of Signers</h3>
+    <table id="signerTable">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>X</th>
+                <th>Y</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Rows will be inserted here -->
+        </tbody>
+    </table>
+
+    <divmod style="margin-top: 20px;">
+        <button onclick="finishSetup()" style="padding: 10px 20px; background-color: green; color: white; border: none; border-radius: 5px;">
+            ✅ DONE
+        </button>
+    </div>
+    
+
+    <script>
+        const image = document.getElementById('pdfImage');
+        const dot = document.getElementById('dot');
+        const xInput = document.getElementById('xCoord');
+        const yInput = document.getElementById('yCoord');
+        const modal = document.getElementById('nameModal');
+        const modalClose = document.getElementById('modalClose');
+        const signerForm = document.getElementById('signerForm');
+        const signerName = document.getElementById('signerName');
+        const status = document.getElementById('status');
+
+        const confirmModal = document.getElementById('confirmModal');
+        const confirmOK = document.getElementById('confirmOK');
+        const confirmClose = document.getElementById('confirmClose');
+        const signerTable = document.getElementById('signerTable').querySelector('tbody');
+
+        function loadSigners() {
+            fetch("/signers")
+                .then(response => response.json())
+                .then(data => {
+                    signerTable.innerHTML = "";
+                    data.forEach(signer => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${signer.name}</td>
+                            <td>${signer.x}</td>
+                            <td>${signer.y}</td>
+                            <td><button onclick="deleteSigner('${signer.id}')">❌ Delete</button></td>
+                        `;
+                        signerTable.appendChild(row);
+                    });
+                });
+        }
+
+        function deleteSigner(signerId) {
+            fetch(`/delete_signer/${signerId}`, {
+                method: 'POST'
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    loadSigners();
+                }
+            });
+        }
+
+        function finishSetup() {
+            alert("Signer setup completed. You will now return to the home page.");
+            window.location.href = "/";
+        }
+        
+        image.addEventListener('click', function(e) {
+            const rect = image.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            dot.style.left = `${x}px`;
+            dot.style.top = `${y}px`;
+            dot.style.display = 'block';
+
+            xInput.value = Math.round(x);
+            yInput.value = Math.round(y);
+
+            modal.style.display = 'block';
+        });
+
+        modalClose.onclick = () => {
+            modal.style.display = 'none';
+            status.textContent = '';
+        };
+
+        confirmClose.onclick = confirmOK.onclick = () => {
+            confirmModal.style.display = 'none';
+            dot.style.display = 'none';
+        };
+
+        window.onclick = function(event) {
+            if (event.target === modal) modal.style.display = 'none';
+            if (event.target === confirmModal) confirmModal.style.display = 'none';
+        };
+
+        signerForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(signerForm);
+
+            fetch(window.location.pathname, {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.text())
+            .then(data => {
+                modal.style.display = 'none';
+                signerName.value = '';
+                loadSigners();
+                confirmModal.style.display = 'block';
+            })
+            .catch(err => {
+                status.textContent = "❌ Error adding signer.";
+                console.error(err);
+            });
+        });
+
+        loadSigners();
+    </script>
+</body>
+</html>
