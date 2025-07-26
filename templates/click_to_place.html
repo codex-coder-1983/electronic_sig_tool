@@ -18,6 +18,19 @@
             pointer-events: none;
             display: none;
         }
+        #dot::after {
+            content: attr(data-coord);
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 10px;
+            background: #222;
+            color: #fff;
+            padding: 2px 5px;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
         .modal, .confirm-modal {
             display: none;
             position: fixed;
@@ -76,13 +89,17 @@
     <div id="nameModal" class="modal">
         <div class="modal-content">
             <span class="close" id="modalClose">&times;</span>
-            <form id="signerForm">
-                <label>Signer Name:</label><br>
-                <input type="text" name="name" id="signerName" required><br><br>
-                <input type="hidden" name="x" id="xCoord">
-                <input type="hidden" name="y" id="yCoord">
-                <button type="submit">Save</button>
-                <div id="status" class="success"></div>
+            <form id="signerForm" method="POST">
+              <label>Name:</label><br>
+              <input type="text" name="name" required><br><br>
+
+              <label>Email:</label><br>
+              <input type="email" name="email" required><br><br>
+
+              <input type="hidden" name="x" id="xCoord">
+              <input type="hidden" name="y" id="yCoord">
+
+              <button type="submit">Add Signer</button>
             </form>
         </div>
     </div>
@@ -103,8 +120,8 @@
         <thead>
             <tr>
                 <th>Name</th>
-                <th>X</th>
-                <th>Y</th>
+                <th>Email</th>
+                <th>Link</th>
                 <th>Action</th>
             </tr>
         </thead>
@@ -112,13 +129,6 @@
             <!-- Rows will be inserted here -->
         </tbody>
     </table>
-
-    <divmod style="margin-top: 20px;">
-        <button onclick="finishSetup()" style="padding: 10px 20px; background-color: green; color: white; border: none; border-radius: 5px;">
-            ✅ DONE
-        </button>
-    </div>
-    
 
     <script>
         const image = document.getElementById('pdfImage');
@@ -128,9 +138,6 @@
         const modal = document.getElementById('nameModal');
         const modalClose = document.getElementById('modalClose');
         const signerForm = document.getElementById('signerForm');
-        const signerName = document.getElementById('signerName');
-        const status = document.getElementById('status');
-
         const confirmModal = document.getElementById('confirmModal');
         const confirmOK = document.getElementById('confirmOK');
         const confirmClose = document.getElementById('confirmClose');
@@ -143,10 +150,14 @@
                     signerTable.innerHTML = "";
                     data.forEach(signer => {
                         const row = document.createElement('tr');
+                        row.id = `signer-row-${signer.id}`;
                         row.innerHTML = `
                             <td>${signer.name}</td>
-                            <td>${signer.x}</td>
-                            <td>${signer.y}</td>
+                            <td>${signer.email}</td>
+                            <td>
+                                <a href="/sign/${signer.id}" target="_blank">/sign/${signer.id}</a>
+                                <button onclick="copyLink(this)" data-link="/sign/${signer.id}">📋 Copy</button>
+                            </td>
                             <td><button onclick="deleteSigner('${signer.id}')">❌ Delete</button></td>
                         `;
                         signerTable.appendChild(row);
@@ -161,16 +172,36 @@
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
-                    loadSigners();
+                    const row = document.getElementById(`signer-row-${signerId}`);
+                    if (row) row.remove();
                 }
             });
+        }
+
+        function copyLink(button) {
+            const link = button.getAttribute('data-link');
+            navigator.clipboard.writeText(location.origin + link)
+                .then(() => {
+                    showCopyToast();
+                })
+                .catch(err => {
+                    console.error('Failed to copy: ', err);
+                });
+        }
+
+        function showCopyToast() {
+            const toast = document.getElementById('copyToast');
+            toast.style.display = 'block';
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, 2000);
         }
 
         function finishSetup() {
             alert("Signer setup completed. You will now return to the home page.");
             window.location.href = "/";
         }
-        
+
         image.addEventListener('click', function(e) {
             const rect = image.getBoundingClientRect();
             const x = e.clientX - rect.left;
@@ -179,6 +210,7 @@
             dot.style.left = `${x}px`;
             dot.style.top = `${y}px`;
             dot.style.display = 'block';
+            dot.setAttribute('data-coord', `X: ${Math.round(x)}, Y: ${Math.round(y)}`);
 
             xInput.value = Math.round(x);
             yInput.value = Math.round(y);
@@ -188,7 +220,6 @@
 
         modalClose.onclick = () => {
             modal.style.display = 'none';
-            status.textContent = '';
         };
 
         confirmClose.onclick = confirmOK.onclick = () => {
@@ -212,17 +243,31 @@
             .then(res => res.text())
             .then(data => {
                 modal.style.display = 'none';
-                signerName.value = '';
                 loadSigners();
                 confirmModal.style.display = 'block';
             })
             .catch(err => {
-                status.textContent = "❌ Error adding signer.";
+                alert("❌ Error adding signer.");
                 console.error(err);
             });
         });
 
         loadSigners();
     </script>
+
+    <div id="copyToast" style="
+        display: none;
+        position: fixed;
+        bottom: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: #333;
+        color: #fff;
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-size: 14px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        z-index: 1000;
+    ">🔗 Signing link copied!</div>
 </body>
 </html>
