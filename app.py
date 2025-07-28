@@ -52,7 +52,9 @@ def admin():
         try:
             POPPLER_PATH = r'C:\Poppler\poppler-24.08.0\Library\bin'
             images = convert_from_path(pdf_path, first_page=1, last_page=1, poppler_path=POPPLER_PATH)
-            images[0].save(os.path.join('static', 'preview.jpg'), 'JPEG')
+            preview_name = os.path.splitext(pdf_filename)[0] + '_preview.jpg'
+            preview_path = os.path.join('static', preview_name)
+            images[0].save(preview_path, 'JPEG')
         except Exception as e:
             return f"❌ Error converting PDF to image: {e}"
 
@@ -86,9 +88,28 @@ def set_signature_positions(pdf):
     conn.close()
     return render_template('click_to_place.html', pdf=pdf, signers=signers)
 
-# Signature upload
 @app.route('/sign/<signer_id>', methods=['GET', 'POST'])
 def sign_document(signer_id):
+    import sqlite3
+    import os
+    from flask import request, render_template
+    from werkzeug.utils import secure_filename
+    from PIL import Image
+    import fitz  # PyMuPDF
+
+    # Fetch signer info (x, y, pdf_filename)
+    conn = sqlite3.connect('signers.db')
+    c = conn.cursor()
+    c.execute('SELECT x, y, pdf_filename FROM signers WHERE id=?', (signer_id,))
+    row = c.fetchone()
+    conn.close()
+
+    if not row:
+        return '❌ Signer not found', 404
+
+    x_raw, y_raw, pdf_filename = row
+    preview_name = os.path.splitext(pdf_filename)[0] + '_preview.jpg'
+
     if request.method == 'POST':
         file = request.files['signature']
         filename = f"{signer_id}_{secure_filename(file.filename)}"
@@ -101,53 +122,47 @@ def sign_document(signer_id):
         c.execute('UPDATE signers SET signature_path=?, has_signed=1 WHERE id=?',
                   (signature_path, signer_id))
         conn.commit()
-
-        # Fetch PDF filename and coordinates
-        c.execute('SELECT x, y, pdf_filename FROM signers WHERE id=?', (signer_id,))
-        row = c.fetchone()
         conn.close()
 
-        if not row:
-            return '❌ Signer not found', 404
-
-        x_raw, y_raw, pdf_filename = row
+        # Prepare PDF merge
         original_pdf_path = os.path.join('uploads', pdf_filename)
         output_pdf_path = os.path.join('signed', f'signed_{pdf_filename}')
         os.makedirs('signed', exist_ok=True)
 
         try:
-            print(f"\n📐 Attempting to open PDF: {original_pdf_path}")
             doc = fitz.open(original_pdf_path)
             page = doc[0]
             page_width = page.rect.width
             page_height = page.rect.height
-            print(f"📐 Page size: width={page_width}, height={page_height}")
 
-            # Load preview image to compute scaling
-            preview_path = os.path.join('static', 'preview.jpg')
+            # Load preview image for scaling
+            preview_path = os.path.join('static', preview_name)
             preview_image = Image.open(preview_path)
             img_width, img_height = preview_image.size
-            print(f"🖼️ Preview image size: width={img_width}, height={img_height}")
 
-            # Scale coordinates from image to PDF space
             scale_x = page_width / img_width
             scale_y = page_height / img_height
+
+            # Convert coordinates from image to PDF space
             x_pdf = float(x_raw) * scale_x
-            y_pdf = (img_height - float(y_raw)) * scale_y  # invert Y
-            print(f"📍 Raw coords: ({x_raw}, {y_raw}) → Scaled PDF coords: ({x_pdf:.2f}, {y_pdf:.2f})")
+            y_pdf = (img_height - float(y_raw)) * scale_y  # Invert Y
 
-            # Signature dimensions (adjust if needed)
-            sig_width = 100
-            sig_height = 50
+            # Load signature image
+            sig_img = Image.open(signature_path)
+            sig_width_px, sig_height_px = sig_img.size
 
-            # Clamp if near edge
-            x_pdf = min(x_pdf, page_width - sig_width)
-            y_pdf = min(y_pdf, page_height - sig_height)
+            sig_width_pts = sig_width_px * scale_x
+            sig_height_pts = sig_height_px * scale_y
 
-            rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width, y_pdf + sig_height)
-            print(f"🖋️ Inserting at Rect: {rect}")
+            # Center signature on clicked point
+            x_pdf -= sig_width_pts / 2
+            y_pdf -= sig_height_pts / 2
 
-            page.draw_rect(rect, color=(1, 0, 0), width=1)  # Optional debug box
+            # Clamp within page
+            x_pdf = max(0, min(x_pdf, page_width - sig_width_pts))
+            y_pdf = max(0, min(y_pdf, page_height - sig_height_pts))
+
+            rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
             page.insert_image(rect, filename=signature_path)
             doc.save(output_pdf_path)
             doc.close()
@@ -159,8 +174,14 @@ def sign_document(signer_id):
             print(f"❌ ERROR merging signature: {e}")
             return f'❌ Failed to merge signature: {e}', 500
 
-    return render_template('sign.html', signer_id=signer_id)
-
+    # GET request: show upload form with red dot
+    return render_template(
+        'sign.html',
+        signer_id=signer_id,
+        x=float(x_raw),
+        y=float(y_raw),
+        preview_image=preview_name
+    )
 
 
 # API: List of signers

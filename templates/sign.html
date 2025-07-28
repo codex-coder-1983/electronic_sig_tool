@@ -12,11 +12,6 @@
             max-width: 800px;
             margin: auto;
         }
-        img {
-            max-width: 100%;
-            border: 1px solid #ccc;
-            margin-bottom: 20px;
-        }
         .upload-form {
             margin-top: 20px;
         }
@@ -24,13 +19,36 @@
             color: green;
             margin-top: 10px;
         }
+        #pdf-preview {
+            max-width: 100%;
+            display: block;
+            border: 1px solid #ccc;
+        }
+        #click-dot {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: red;
+            border-radius: 50%;
+            display: none;
+        }
+        .preview-wrapper {
+            position: relative;
+            display: inline-block;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h2>📝 Please upload your signature</h2>
-        
-        <img src="{{ url_for('static', filename='preview.jpg') }}" alt="PDF Preview">
+
+        <!-- Image preview with red dot -->
+        <div class="preview-wrapper">
+            <img id="pdf-preview"
+                 src="{{ url_for('static', filename=preview_image) }}"
+                 alt="PDF Preview">
+            <div id="click-dot"></div>
+        </div>
 
         <form class="upload-form" method="POST" enctype="multipart/form-data">
             <input type="file" name="signature" accept="image/*" required><br><br>
@@ -41,5 +59,35 @@
             <p class="message">{{ message }}</p>
         {% endif %}
     </div>
+
+    <script>
+      window.addEventListener('DOMContentLoaded', function () {
+        const dot = document.getElementById('click-dot');
+        const img = document.getElementById('pdf-preview');
+
+        // Coordinates saved in image space (top-left origin)
+        const x = {{ x | tojson }};
+        const y = {{ y | tojson }};
+
+        img.onload = function () {
+          const displayWidth = img.width;
+          const displayHeight = img.height;
+
+          const naturalWidth = img.naturalWidth;
+          const naturalHeight = img.naturalHeight;
+
+          const scaleX = displayWidth / naturalWidth;
+          const scaleY = displayHeight / naturalHeight;
+
+          const dotX = x * scaleX;
+          const dotY = (naturalHeight - y) * scaleY;
+
+          dot.style.left = `${dotX - 6}px`;
+          dot.style.top = `${dotY - 6}px`;
+          dot.style.display = 'block';
+        };
+      });
+    </script>
+
 </body>
 </html>

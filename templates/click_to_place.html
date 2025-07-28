@@ -5,9 +5,10 @@
     <style>
         img {
             max-width: 100%;
-            border: 2px solid #aaa;
+            outline: 2px solid #aaa;  /* Use outline instead of border */
             cursor: crosshair;
         }
+
         #dot {
             position: absolute;
             width: 10px;
@@ -79,9 +80,11 @@
 </head>
 <body>
     <h2>Click on the image to place a signature</h2>
-
+    
+    <p>Current PDF: <strong>{{ pdf }}</strong></p>
+    
     <div style="position: relative;">
-        <img id="pdfImage" src="{{ url_for('static', filename='preview.jpg') }}">
+        <img id="pdf-preview" src="{{ url_for('static', filename=pdf.replace('.pdf', '_preview.jpg')) }}">
         <div id="dot"></div>
     </div>
 
@@ -131,7 +134,7 @@
     </table>
 
     <script>
-        const image = document.getElementById('pdfImage');
+        const image = document.getElementById('pdf-preview');
         const dot = document.getElementById('dot');
         const xInput = document.getElementById('xCoord');
         const yInput = document.getElementById('yCoord');
@@ -206,14 +209,19 @@
             const rect = image.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
+            console.log(`Click raw: x=${x}, y=${y}`);
 
             dot.style.left = `${x}px`;
             dot.style.top = `${y}px`;
             dot.style.display = 'block';
             dot.setAttribute('data-coord', `X: ${Math.round(x)}, Y: ${Math.round(y)}`);
 
-            xInput.value = Math.round(x);
-            yInput.value = Math.round(y);
+            // Use actual image resolution
+            const xRatio = x / image.clientWidth;
+            const yRatio = y / image.clientHeight;
+            xInput.value = Math.round(xRatio * image.naturalWidth);
+            // Flip the Y-axis by subtracting from the image's natural height
+            yInput.value = Math.round(image.naturalHeight - (yRatio * image.naturalHeight));
 
             modal.style.display = 'block';
         });
@@ -269,5 +277,40 @@
         box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         z-index: 1000;
     ">🔗 Signing link copied!</div>
+
+    <script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const dot = document.getElementById("click-dot");
+        const img = document.getElementById("pdf-preview");
+
+        const x = {{ x }};
+        const y = {{ y }};
+
+        function showDot() {
+            const imgWidth = img.naturalWidth;
+            const imgHeight = img.naturalHeight;
+
+            const displayWidth = img.clientWidth;
+            const displayHeight = img.clientHeight;
+
+            const xRatio = x / imgWidth;
+            const yRatio = y / imgHeight;
+
+            const dotX = xRatio * displayWidth;
+            const dotY = yRatio * displayHeight;
+
+            dot.style.left = `${dotX - 6}px`;
+            dot.style.top = `${dotY - 6}px`;
+            dot.style.display = "block";
+        }
+
+        if (img.complete) {
+            showDot();
+        } else {
+            img.onload = showDot;
+        }
+    });
+    </script>
+    
 </body>
 </html>
