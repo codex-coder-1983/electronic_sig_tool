@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Merge Successful</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center; /* Horizontal centering */
+            padding: 50px;
+            background-color: #f8f9fa;
+        }
+        .container {
+            display: inline-block;
+            padding: 30px;
+            border-radius: 8px;
+            background-color: white;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .message {
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .countdown {
+            font-size: 14px;
+            color: #777;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="message">{{ message }}</div>
+        <div class="countdown">
+            Redirecting to admin panel in <span id="count">5</span> seconds...
+        </div>
+    </div>
+
+    <script>
+        const redirectUrl = "{{ redirect_url }}";
+        let count = 5;
+        const countSpan = document.getElementById("count");
+
+        const timer = setInterval(() => {
+            count--;
+            countSpan.textContent = count;
+            if (count === 0) {
+                clearInterval(timer);
+                window.location.href = redirectUrl;
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

@@ -133,6 +133,15 @@
         </tbody>
     </table>
 
+    <!-- Done Button -->
+    <form action="{{ url_for('done_placing_signers', pdf=pdf) }}" method="get" style="margin-top: 20px; text-align: center;">
+      <button type="submit" style="padding: 10px 20px; font-size: 16px;">✅ Done</button>
+    </form>
+    
+    <script>
+        const currentPdf = "{{ pdf }}";
+    </script>
+        
     <script>
         const image = document.getElementById('pdf-preview');
         const dot = document.getElementById('dot');
@@ -158,8 +167,8 @@
                             <td>${signer.name}</td>
                             <td>${signer.email}</td>
                             <td>
-                                <a href="/sign/${signer.id}" target="_blank">/sign/${signer.id}</a>
-                                <button onclick="copyLink(this)" data-link="/sign/${signer.id}">📋 Copy</button>
+                                <a href="/sign/${currentPdf}/${signer.id}" target="_blank">/sign/${currentPdf}/${signer.id}</a>
+                                <button onclick="copyLink(this)" data-link="/sign/${currentPdf}/${signer.id}">📋 Copy</button>
                             </td>
                             <td><button onclick="deleteSigner('${signer.id}')">❌ Delete</button></td>
                         `;
@@ -277,40 +286,6 @@
         box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         z-index: 1000;
     ">🔗 Signing link copied!</div>
-
-    <script>
-    document.addEventListener("DOMContentLoaded", () => {
-        const dot = document.getElementById("click-dot");
-        const img = document.getElementById("pdf-preview");
-
-        const x = {{ x }};
-        const y = {{ y }};
-
-        function showDot() {
-            const imgWidth = img.naturalWidth;
-            const imgHeight = img.naturalHeight;
-
-            const displayWidth = img.clientWidth;
-            const displayHeight = img.clientHeight;
-
-            const xRatio = x / imgWidth;
-            const yRatio = y / imgHeight;
-
-            const dotX = xRatio * displayWidth;
-            const dotY = yRatio * displayHeight;
-
-            dot.style.left = `${dotX - 6}px`;
-            dot.style.top = `${dotY - 6}px`;
-            dot.style.display = "block";
-        }
-
-        if (img.complete) {
-            showDot();
-        } else {
-            img.onload = showDot;
-        }
-    });
-    </script>
     
 </body>
 </html>

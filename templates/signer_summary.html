@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Signers Summary</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; text-align: center; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 20px auto;
+      max-width: 800px;
+      text-align: left;
+    }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+    th { background-color: #f2f2f2; }
+    .signed { color: green; }
+    .not-signed { color: red; }
+    button {
+      margin: 10px;
+      padding: 10px 20px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h2>Signers for PDF: {{ pdf }}</h2>
+
+  <!-- ✅ Flash message display -->
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <ul style="color: green; font-weight: bold;">
+        {% for msg in messages %}
+          <li>{{ msg }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
+
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Email</th>
+        <th>X</th>
+        <th>Y</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for name, email, x, y, has_signed in signers %}
+        <tr id="signer-{{ name|replace(' ', '-') }}-{{ email|replace('@', '_at_')|replace('.', '_') }}">
+          <td>{{ name }}</td>
+          <td>{{ email }}</td>
+          <td>{{ x }}</td>
+          <td>{{ y }}</td>
+          <td class="status {{ 'signed' if has_signed else 'not-signed' }}">
+            {{ 'Signed' if has_signed else 'Pending' }}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- 🔁 Refresh & Merge Buttons -->
+  <div>
+    <button id="refresh-btn">🔄 Refresh</button>
+    <form method="post" action="{{ url_for('merge_route', pdf_filename=pdf) }}" style="display: inline;">
+      <button type="submit" id="merge-btn" disabled>
+        🔁 Merge Signatures
+      </button>
+    </form>
+  </div>
+
+  <p><a href="/admin">⬅ Back to Admin Panel</a></p>
+
+  <script>
+    console.log("📄 Script loaded");
+    document.getElementById("refresh-btn").addEventListener("click", function (event) {
+      event.preventDefault();
+      console.log("🔄 Refresh button clicked");
+
+      const url = "/api/signer-statuses/{{ pdf|replace(' ', '_')|replace('(', '')|replace(')', '')|replace(',', '') }}";
+      console.log("📡 Fetching from:", url);
+
+      fetch(url)
+        .then(res => {
+          console.log("📡 Fetched data, response status:", res.status);
+          return res.json();
+        })
+        .then(data => {
+          console.log("✅ JSON received:", data);
+
+          let allSigned = true;
+
+          data.forEach(signer => {
+            const rowId = "signer-" + signer.name.replace(/ /g, "-") + "-" + signer.email.replace(/@/g, "_at_").replace(/\./g, "_");
+            const row = document.getElementById(rowId);
+
+            if (row) {
+              const statusCell = row.querySelector(".status");
+              if (statusCell) {
+                statusCell.textContent = signer.status;
+                statusCell.className = "status " + signer.class;
+                console.log(`🔁 Updated ${signer.name}: ${signer.status}`);
+              }
+            }
+
+            if (signer.status !== "Signed") {
+              allSigned = false;
+            }
+          });
+
+          // Enable or disable merge button
+          const mergeBtn = document.getElementById("merge-btn");
+          if (mergeBtn) {
+            mergeBtn.disabled = !allSigned;
+            console.log(allSigned ? "✅ All signed — Merge enabled" : "⏳ Not all signed — Merge disabled");
+          }
+        })
+        .catch(err => console.error("Refresh failed:", err));
+    });
+  </script>
+         
+</body>
+</html>

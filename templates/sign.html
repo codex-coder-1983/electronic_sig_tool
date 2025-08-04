@@ -40,7 +40,8 @@
 </head>
 <body>
     <div class="container">
-        <h2>📝 Please upload your signature</h2>
+        <h2>📝 Please upload your signature.</h2>
+        <p><strong>Scroll down, click "Choose File", find your signature image, and click "Upload Signature".</strong></p>
 
         <!-- Image preview with red dot -->
         <div class="preview-wrapper">
@@ -50,6 +51,7 @@
             <div id="click-dot"></div>
         </div>
 
+        <!-- Simplified form (standard POST) -->
         <form class="upload-form" method="POST" enctype="multipart/form-data">
             <input type="file" name="signature" accept="image/*" required><br><br>
             <button type="submit">Upload Signature</button>
@@ -65,27 +67,36 @@
         const dot = document.getElementById('click-dot');
         const img = document.getElementById('pdf-preview');
 
-        // Coordinates saved in image space (top-left origin)
         const x = {{ x | tojson }};
         const y = {{ y | tojson }};
 
         img.onload = function () {
           const displayWidth = img.width;
           const displayHeight = img.height;
-
           const naturalWidth = img.naturalWidth;
           const naturalHeight = img.naturalHeight;
-
           const scaleX = displayWidth / naturalWidth;
           const scaleY = displayHeight / naturalHeight;
-
           const dotX = x * scaleX;
           const dotY = (naturalHeight - y) * scaleY;
-
           dot.style.left = `${dotX - 6}px`;
           dot.style.top = `${dotY - 6}px`;
           dot.style.display = 'block';
         };
+
+        {% if download_url %}
+          // Auto-download and close after 3 seconds
+          const a = document.createElement('a');
+          a.href = "{{ download_url }}";
+          a.download = '';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+
+          setTimeout(() => {
+            window.close();
+          }, 3000);
+        {% endif %}
       });
     </script>
 

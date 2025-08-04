@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Signature Uploaded Successfully</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding: 40px;
+    }
+    .countdown {
+      font-size: 1.5rem;
+      margin-top: 10px;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <h2>✅ Signature uploaded successfully!</h2>
+  <p>Your signature has been saved. The final signed PDF will be generated once the admin clicks the <strong>Merge Signatures</strong> button.</p>
+
+  <div class="countdown">
+    This tab will close in <span id="count">5</span> seconds...
+  </div>
+
+  <noscript>
+    <p><a href="{{ pdf_url }}" download>Click here to download your signed PDF</a></p>
+  </noscript>
+
+  <script>
+    // Auto-download PDF
+    const pdfUrl = "{{ pdf_url }}";
+    const link = document.createElement('a');
+    link.href = pdfUrl;
+    link.download = "";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // Countdown to close
+    let counter = 5;
+    const countEl = document.getElementById("count");
+    const countdown = setInterval(() => {
+      counter--;
+      countEl.textContent = counter;
+      if (counter === 0) {
+        clearInterval(countdown);
+        window.close();  // Only works if tab was opened via JS
+      }
+    }, 1000);
+  </script>
+</body>
+</html>

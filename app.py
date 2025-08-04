@@ -1,7 +1,8 @@
-from flask import Flask, request, render_template, redirect, url_for, jsonify
+from flask import Flask, request, render_template, redirect, url_for, jsonify, send_from_directory, session, flash
 from flask_mail import Mail, Message
 from werkzeug.utils import secure_filename
 import os
+import re
 import sqlite3
 import uuid
 from pdf2image import convert_from_path
@@ -9,8 +10,28 @@ import fitz  # PyMuPDF
 import smtplib
 from email.message import EmailMessage
 from PIL import Image
+from datetime import datetime
+from filelock import FileLock, Timeout
+import logging
+import threading
+import time
+import secrets
+from dotenv import load_dotenv
+from pathlib import Path
 
+##logging.basicConfig(
+##    level=logging.INFO,  # or logging.DEBUG for more detail
+##    format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
+##    datefmt='%Y-%m-%d %H:%M:%S'
+##)
+
+load_dotenv()  # Loads variables from .env file
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY")
+
+xdim = 170
+points_offset = 40
+size_date_font = 10
 
 # Email setup
 EMAIL = 'your_email@gmail.com'
@@ -70,119 +91,244 @@ def set_signature_positions(pdf):
         email = request.form['email']
         x = int(request.form['x'])
         y = int(request.form['y'])
-        signer_id = str(uuid.uuid4())
 
         conn = sqlite3.connect('signers.db')
         c = conn.cursor()
+
+        # Get next sequence number for this PDF
+        c.execute('SELECT MAX(CAST(id AS INTEGER)) FROM signers WHERE pdf_filename = ?', (pdf,))
+        row = c.fetchone()
+        next_id = (row[0] or 0) + 1
+        signer_id = str(next_id)
+
+        # Insert new signer
         c.execute('INSERT INTO signers (id, name, email, x, y, pdf_filename) VALUES (?, ?, ?, ?, ?, ?)',
                   (signer_id, name, email, x, y, pdf))
         conn.commit()
         conn.close()
 
+        # ✅ Generate full signing link
+        base_url = request.host_url.strip('/')  # example: http://localhost:8080 or ngrok domain
+        signing_link = f"{base_url}/sign/{pdf}/{signer_id}"
+        # print(f"✅ Signing link for {name} ({email}): {signing_link}")        
+
         return '', 204
 
     conn = sqlite3.connect('signers.db')
     c = conn.cursor()
-    c.execute('SELECT id, name, email FROM signers')
+    c.execute('SELECT id, name, email FROM signers WHERE pdf_filename = ?', (pdf,))
     signers = c.fetchall()
     conn.close()
+
+    # 🔁 Add signing link for each signer
+    base_url = request.host_url.strip('/')
+    signers_with_links = [
+        {
+            'id': row[0],
+            'name': row[1],
+            'email': row[2],
+            'link': f"{base_url}/sign/{pdf}/{row[0]}"
+        }
+        for row in signers
+    ]    
+
     return render_template('click_to_place.html', pdf=pdf, signers=signers)
 
-@app.route('/sign/<signer_id>', methods=['GET', 'POST'])
-def sign_document(signer_id):
-    import sqlite3
-    import os
-    from flask import request, render_template
-    from werkzeug.utils import secure_filename
-    from PIL import Image
-    import fitz  # PyMuPDF
 
-    # Fetch signer info (x, y, pdf_filename)
+@app.route('/sign/<pdf>/<signer_id>', methods=['GET', 'POST'])
+def sign_document(pdf, signer_id):
+    # Fetch signer info (x, y, has_signed) using both PDF and signer_id
     conn = sqlite3.connect('signers.db')
     c = conn.cursor()
-    c.execute('SELECT x, y, pdf_filename FROM signers WHERE id=?', (signer_id,))
+    c.execute('SELECT x, y, has_signed FROM signers WHERE id=? AND pdf_filename=?', (signer_id, pdf))
     row = c.fetchone()
     conn.close()
 
     if not row:
         return '❌ Signer not found', 404
 
-    x_raw, y_raw, pdf_filename = row
-    preview_name = os.path.splitext(pdf_filename)[0] + '_preview.jpg'
+    x_raw, y_raw, row_has_signed = row
+
+    if row_has_signed:
+        return '✅ You have already signed this document.', 400
+
+    preview_name = os.path.splitext(pdf)[0] + '_preview.jpg'
 
     if request.method == 'POST':
+        if 'signature' not in request.files or request.files['signature'].filename == '':
+            return '❌ No signature file uploaded', 400
+
         file = request.files['signature']
-        filename = f"{signer_id}_{secure_filename(file.filename)}"
+        base_name = os.path.splitext(pdf)[0]
+        filename = f"{base_name}_signer{signer_id}.png"
         signature_path = os.path.join('static/signatures', filename)
+
+        # Save uploaded signature
         file.save(signature_path)
+
+        # Resize signature
+        with Image.open(signature_path) as img:
+            target_width = xdim  # you should define xdim globally
+            w_percent = target_width / float(img.size[0])
+            target_height = int(float(img.size[1]) * w_percent)
+
+            resized = img.resize((target_width, target_height), Image.LANCZOS)
+            resized.save(signature_path)
 
         # Update DB
         conn = sqlite3.connect('signers.db')
         c = conn.cursor()
-        c.execute('UPDATE signers SET signature_path=?, has_signed=1 WHERE id=?',
-                  (signature_path, signer_id))
+        c.execute('UPDATE signers SET signature_path=?, has_signed=1 WHERE id=? AND pdf_filename=?',
+                  (signature_path, signer_id, pdf))
         conn.commit()
         conn.close()
 
-        # Prepare PDF merge
-        original_pdf_path = os.path.join('uploads', pdf_filename)
-        output_pdf_path = os.path.join('signed', f'signed_{pdf_filename}')
-        os.makedirs('signed', exist_ok=True)
+        # Instead of merging, just show success
+        return render_template('success.html', message="✅ Signature uploaded successfully.")
 
-        try:
-            doc = fitz.open(original_pdf_path)
-            page = doc[0]
-            page_width = page.rect.width
-            page_height = page.rect.height
-
-            # Load preview image for scaling
-            preview_path = os.path.join('static', preview_name)
-            preview_image = Image.open(preview_path)
-            img_width, img_height = preview_image.size
-
-            scale_x = page_width / img_width
-            scale_y = page_height / img_height
-
-            # Convert coordinates from image to PDF space
-            x_pdf = float(x_raw) * scale_x
-            y_pdf = (img_height - float(y_raw)) * scale_y  # Invert Y
-
-            # Load signature image
-            sig_img = Image.open(signature_path)
-            sig_width_px, sig_height_px = sig_img.size
-
-            sig_width_pts = sig_width_px * scale_x
-            sig_height_pts = sig_height_px * scale_y
-
-            # Center signature on clicked point
-            x_pdf -= sig_width_pts / 2
-            y_pdf -= sig_height_pts / 2
-
-            # Clamp within page
-            x_pdf = max(0, min(x_pdf, page_width - sig_width_pts))
-            y_pdf = max(0, min(y_pdf, page_height - sig_height_pts))
-
-            rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-            page.insert_image(rect, filename=signature_path)
-            doc.save(output_pdf_path)
-            doc.close()
-
-            print(f"✅ Signed PDF saved at: {output_pdf_path}")
-            return '✅ Signature uploaded and merged into PDF!'
-
-        except Exception as e:
-            print(f"❌ ERROR merging signature: {e}")
-            return f'❌ Failed to merge signature: {e}', 500
-
-    # GET request: show upload form with red dot
+    # GET request
     return render_template(
         'sign.html',
         signer_id=signer_id,
         x=float(x_raw),
         y=float(y_raw),
-        preview_image=preview_name
+        preview_image=preview_name,
+        message='',
+        download_url=None
     )
 
+
+@app.route('/merge/<pdf_filename>', methods=['POST'])
+def merge_route(pdf_filename):
+    # Server's Downloads folder
+    downloads_dir = str(Path.home() / "Downloads")
+    os.makedirs(downloads_dir, exist_ok=True)
+
+    # Get all signed signatures
+    conn = sqlite3.connect('signers.db')
+    c = conn.cursor()
+    c.execute('SELECT x, y, signature_path FROM signers WHERE pdf_filename=? AND has_signed=1', (pdf_filename,))
+    rows = c.fetchall()
+    conn.close()
+
+    if not rows:
+        flash("❌ No signed signatures to merge yet.")
+        return redirect(url_for('get_signers', pdf_filename=pdf_filename))
+
+    signers = [{"x": x, "y": y, "signature_path": sig} for x, y, sig in rows]
+
+    try:
+        output_path = merge_signatures_into_pdf(pdf_filename, signers, output_folder=downloads_dir)
+        message = f"✅ Merged PDF saved to: {output_path}"
+        return render_template("merge_success.html", message=message, redirect_url=url_for('admin'))
+    except Exception as e:
+        logging.exception("❌ Merge failed:")
+        flash(f"❌ Merge failed: {str(e)}")
+        return redirect(url_for('get_signers', pdf_filename=pdf_filename))  
+
+
+@app.route('/set_merge_folder', methods=['POST'])
+def set_merge_folder():
+    uploaded_files = request.files.getlist('merge_folder')
+    if uploaded_files:
+        # Get parent folder from first uploaded file
+        first_file = uploaded_files[0]
+        folder_path = os.path.dirname(first_file.filename)  # this gets the client-side path
+        session['merge_folder'] = folder_path  # store in session (or use a more persistent method)
+    return redirect(request.referrer or url_for('admin_panel'))
+
+
+@app.route('/done/<pdf>')
+def done_placing_signers(pdf):
+    conn = sqlite3.connect('signers.db')
+    c = conn.cursor()
+    c.execute('SELECT name, email, x, y, has_signed FROM signers WHERE pdf_filename = ?', (pdf,))
+    signers = c.fetchall()
+    conn.close()
+
+    return render_template('signer_summary.html', pdf=pdf, signers=signers)
+
+
+def merge_pdf_signatures(pdf_filename):
+    conn = sqlite3.connect('signers.db')
+    c = conn.cursor()
+    c.execute('SELECT x, y, signature_path FROM signers WHERE pdf_filename=? AND has_signed=1', (pdf_filename,))
+    signers = c.fetchall()
+    conn.close()
+
+    if not signers:
+        return False, "No signatures to merge."
+
+    original_pdf_path = os.path.join('uploads', pdf_filename)
+    preview_name = os.path.splitext(pdf_filename)[0] + '_preview.jpg'
+    preview_path = os.path.join('static', preview_name)
+
+    # 🔽 Add this block to regenerate preview if missing
+    if not os.path.exists(preview_path):
+        try:
+            POPPLER_PATH = r'C:\Poppler\poppler-24.08.0\Library\bin'
+            images = convert_from_path(original_pdf_path, first_page=1, last_page=1, poppler_path=POPPLER_PATH)
+            images[0].save(preview_path, 'JPEG')
+        except Exception as e:
+            return False, f"❌ Error regenerating preview: {e}"
+ 
+    output_path = os.path.join('signed', os.path.splitext(pdf_filename)[0] + '_final.pdf')
+
+    doc = fitz.open(original_pdf_path)
+    page = doc[0]
+    page_width = page.rect.width
+    page_height = page.rect.height
+
+    # Preview image for coordinate scaling
+    preview_image = Image.open(preview_path)
+    img_width, img_height = preview_image.size
+    scale_x = page_width / img_width
+    scale_y = page_height / img_height
+
+    for x_raw, y_raw, signature_path in signers:
+        x_pdf = float(x_raw) * scale_x
+        y_pdf = (img_height - float(y_raw)) * scale_y
+
+        sig_img = Image.open(signature_path)
+        sig_width_px, sig_height_px = sig_img.size
+        sig_width_pts = sig_width_px * scale_x
+        sig_height_pts = sig_height_px * scale_y
+
+        x_pdf -= sig_width_pts / 2
+        y_pdf -= sig_height_pts / 2
+        x_pdf = max(0, min(x_pdf, page_width - sig_width_pts))
+        y_pdf = max(0, min(y_pdf, page_height - sig_height_pts))
+
+        rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
+        page.insert_image(rect, filename=signature_path)
+
+        # Optional: Insert date next to signature
+        current_date = datetime.now().strftime("%B %d, %Y")
+        date_x = x_pdf + sig_width_pts + points_offset
+        date_y = y_pdf + (sig_height_pts / 2)
+        page.insert_text(
+            fitz.Point(date_x, date_y),
+            current_date,
+            fontsize=size_date_font,
+            fontname="helv",
+            color=(0, 0, 0)
+        )
+
+    doc.save(output_path)
+    doc.close()
+
+    return True, output_path
+
+
+@app.route('/download/<filename>')
+def download_signed_pdf(filename):
+    return send_from_directory('signed', filename, as_attachment=True)
+
+@app.route('/success')
+def success():
+    pdf_filename = request.args.get('file')  # example: 'signed_output.pdf'
+    pdf_url = url_for('static', filename=f'signed/{pdf_filename}')
+    return render_template('success.html', pdf_url=pdf_url)
 
 # API: List of signers
 @app.route('/signers')
@@ -204,38 +350,123 @@ def delete_signer(signer_id):
     conn.close()
     return jsonify({'success': True})
 
-# Email sending
-def send_signing_email(to_email, signer_id):
-    msg = EmailMessage()
-    msg['Subject'] = 'Please Sign the Document'
-    msg['From'] = EMAIL
-    msg['To'] = to_email
-    link = f'http://localhost:8080/sign/{signer_id}'
-    msg.set_content(f"Hello,\n\nPlease sign the document at: {link}\n\nThank you.")
-    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-        smtp.login(EMAIL, PASSWORD)
-        smtp.send_message(msg)
+@app.route("/api/signer-statuses/<pdf_filename>")
+def signer_statuses_api(pdf_filename):
+    import sqlite3
+    conn = sqlite3.connect("signers.db")
+    cur = conn.cursor()
+    cur.execute("SELECT name, email, has_signed FROM signers WHERE pdf_filename = ?", (pdf_filename,))
+    rows = cur.fetchall()
+    conn.close()
 
-@app.route('/send_emails')
-def send_emails():
+    # Combine rows by name: mark as signed if any instance is signed
+    status_map = {}
+    for name, email, has_signed in rows:
+        if name not in status_map:
+            status_map[name] = has_signed
+        else:
+            status_map[name] = status_map[name] or has_signed  # True if any instance is signed
+
+    return jsonify([
+        {
+            "name": name,
+            "email": email,
+            "status": "Signed" if has_signed else "Pending",
+            "class": "signed" if has_signed else "not-signed"
+        }
+        for name, email, has_signed in rows
+    ])
+
+
+def init_db():
     conn = sqlite3.connect('signers.db')
     c = conn.cursor()
-    c.execute('SELECT id, name, email FROM signers')
-    signers = c.fetchall()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS signers (
+            id TEXT,
+            name TEXT,
+            email TEXT,
+            x INTEGER,
+            y INTEGER,
+            pdf_filename TEXT,
+            signature_path TEXT,
+            has_signed INTEGER DEFAULT 0
+        )
+    ''')
+    conn.commit()
     conn.close()
-    for signer_id, name, email in signers:
-        send_signing_email(email, signer_id)
-    return '✅ Emails sent successfully!'
+
+def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
+    import fitz  # PyMuPDF
+    from PIL import Image
+    from datetime import datetime
+    import os
+    import time
+
+    base_name = os.path.splitext(pdf)[0]
+    original_pdf_path = os.path.join('uploads', pdf)
+    preview_path = os.path.join('static', base_name + '_preview.jpg')
+
+    output_filename = f"{base_name}_merged_v{int(time.time())}.pdf"
+    output_path = os.path.join(output_folder, output_filename)
+    os.makedirs(output_folder, exist_ok=True)
+
+    doc = fitz.open(original_pdf_path)
+    page = doc[0]
+    page_width = page.rect.width
+    page_height = page.rect.height
+
+    preview_image = Image.open(preview_path)
+    img_width, img_height = preview_image.size
+
+    scale_x = page_width / img_width
+    scale_y = page_height / img_height
+
+    for signer in signers:
+        x_raw, y_raw, signature_path = signer["x"], signer["y"], signer["signature_path"]
+
+        x_pdf = float(x_raw) * scale_x
+        y_pdf = (img_height - float(y_raw)) * scale_y
+
+        sig_img = Image.open(signature_path)
+        sig_width_px, sig_height_px = sig_img.size
+        sig_width_pts = sig_width_px * scale_x
+        sig_height_pts = sig_height_px * scale_y
+
+        # Center and clamp
+        x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
+        y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
+
+        rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
+        page.insert_image(rect, filename=signature_path)
+
+        # Insert date
+        date_x = x_pdf + sig_width_pts + points_offset
+        date_y = y_pdf + (sig_height_pts / 2)
+        current_date = datetime.now().strftime("%B %d, %Y")
+
+        page.insert_text(
+            fitz.Point(date_x, date_y),
+            current_date,
+            fontsize=10,
+            fontname="helv",
+            color=(0, 0, 0)
+        )
+
+    doc.save(output_path)
+    doc.close()
+    return output_path
 
 
 from pyngrok import ngrok, conf
 
 if __name__ == '__main__':
+    init_db()  
     # Prevent duplicate tunnel creation on Flask debug reload
     if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
         conf.get_default().config_path = "C:/Users/cerilo.cabacoy/AppData/Local/ngrok/ngrok.yml"
         public_url = ngrok.connect(8080)
-        print("🔗 Public URL:", public_url)
+        print(f"🔗 Public URL: {public_url}")
 
     # Always run Flask app (even on reload)
     app.run(debug=True, port=8080)
