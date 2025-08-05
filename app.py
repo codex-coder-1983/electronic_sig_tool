@@ -461,12 +461,14 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
 from pyngrok import ngrok, conf
 
 if __name__ == '__main__':
-    init_db()  
-
-    # Only for local development (ngrok won't work on Render)
-    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" and os.environ.get("RENDER") != "true":
+    init_db()
+    
+    # Only run ngrok in local environment
+    if os.environ.get("RENDER") is None:
+        from pyngrok import ngrok, conf
         conf.get_default().config_path = "C:/Users/cerilo.cabacoy/AppData/Local/ngrok/ngrok.yml"
         public_url = ngrok.connect(10000)
         print(f"🔗 Public URL: {public_url}")
 
-    app.run(host="0.0.0.0", port=10000)
+    app.run(debug=True, port=10000)
+

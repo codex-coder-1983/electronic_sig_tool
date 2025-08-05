@@ -13,4 +13,4 @@ MarkupSafe==2.1.5
 pdf2image==1.16.3
 filelock==3.13.4
 python-dotenv==1.0.1
-pyngrok==5.3.0
+pyngrok
