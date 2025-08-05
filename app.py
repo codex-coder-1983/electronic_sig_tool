@@ -71,7 +71,7 @@ def admin():
         pdf_file.save(pdf_path)
 
         try:
-            POPPLER_PATH = r'C:\Poppler\poppler-24.08.0\Library\bin'
+            POPPLER_PATH = '/usr/bin'
             images = convert_from_path(pdf_path, first_page=1, last_page=1, poppler_path=POPPLER_PATH)
             preview_name = os.path.splitext(pdf_filename)[0] + '_preview.jpg'
             preview_path = os.path.join('static', preview_name)
@@ -266,7 +266,7 @@ def merge_pdf_signatures(pdf_filename):
     # 🔽 Add this block to regenerate preview if missing
     if not os.path.exists(preview_path):
         try:
-            POPPLER_PATH = r'C:\Poppler\poppler-24.08.0\Library\bin'
+            POPPLER_PATH = '/usr/bin'
             images = convert_from_path(original_pdf_path, first_page=1, last_page=1, poppler_path=POPPLER_PATH)
             images[0].save(preview_path, 'JPEG')
         except Exception as e:
