@@ -1,32 +1,31 @@
-# Use Python 3.10 as the base image
 FROM python:3.10-slim
 
 # Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    poppler-utils \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set work directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libglib2.0-0 \
-    libsm6 \
-    libxrender1 \
-    libxext6 \
-    && rm -rf /var/lib/apt/lists/*
+# Copy files
+COPY . /app
 
-# Install Python dependencies
-COPY requirements.txt .
+# Install Python packages
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
-# Copy app files
-COPY . .
-
-# Expose port (match the port in your app.run or render.yaml)
+# Expose the port
 EXPOSE 10000
 
-# Command to run the app
+# Run the app
 CMD ["python", "app.py"]
