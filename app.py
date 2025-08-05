@@ -470,5 +470,5 @@ if __name__ == '__main__':
         public_url = ngrok.connect(10000)
         print(f"🔗 Public URL: {public_url}")
 
-    app.run(debug=True, port=10000)
+    app.run(host="0.0.0.0", port=10000, debug=True)
 
