@@ -1,8 +1,8 @@
 services:
   - type: web
-    name: your-app-name
-    env: python
-    buildCommand: ./build.sh && pip install -r requirements.txt
+    name: my-electronic-sig-tool
+    runtime: python
+    buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     plan: free
     branch: main
