@@ -462,11 +462,11 @@ from pyngrok import ngrok, conf
 
 if __name__ == '__main__':
     init_db()  
-    # Prevent duplicate tunnel creation on Flask debug reload
-    if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+
+    # Only for local development (ngrok won't work on Render)
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" and os.environ.get("RENDER") != "true":
         conf.get_default().config_path = "C:/Users/cerilo.cabacoy/AppData/Local/ngrok/ngrok.yml"
-        public_url = ngrok.connect(8080)
+        public_url = ngrok.connect(10000)
         print(f"🔗 Public URL: {public_url}")
 
-    # Always run Flask app (even on reload)
-    app.run(debug=True, port=8080)
+    app.run(host="0.0.0.0", port=10000)
