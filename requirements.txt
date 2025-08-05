@@ -1,6 +1,6 @@
 Flask==2.3.3
 Flask-Mail==0.9.1
-PyMuPDF==1.23.21
+PyMuPDF==1.22.5
 Pillow==10.2.0
 Werkzeug==2.3.7
 itsdangerous==2.1.2
