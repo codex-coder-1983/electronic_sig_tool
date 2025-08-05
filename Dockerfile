@@ -28,4 +28,4 @@ RUN pip install -r requirements.txt
 EXPOSE 10000
 
 # Run the app
-CMD ["python", "app.py"]
+CMD ["gunicorn", "--bind", "0.0.0.0:10000", "app:app"]
