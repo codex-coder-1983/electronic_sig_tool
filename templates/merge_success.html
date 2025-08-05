@@ -37,7 +37,20 @@
     </div>
 
     <script>
-        const redirectUrl = "{{ redirect_url }}";
+        const redirectUrl = "{{ redirect_url or url_for('admin') }}";
+        const downloadUrl = "{{ download_url }}";
+
+        // Trigger file download
+        window.onload = function () {
+            const link = document.createElement("a");
+            link.href = downloadUrl;
+            link.download = "";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+
+        // Countdown and redirect
         let count = 5;
         const countSpan = document.getElementById("count");
 

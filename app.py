@@ -218,9 +218,10 @@ def merge_route(pdf_filename):
     signers = [{"x": x, "y": y, "signature_path": sig} for x, y, sig in rows]
 
     try:
-        output_path = merge_signatures_into_pdf(pdf_filename, signers, output_folder=downloads_dir)
-        message = f"✅ Merged PDF saved to: {output_path}"
-        return render_template("merge_success.html", message=message, redirect_url=url_for('admin'))
+        output_path = merge_signatures_into_pdf(pdf_filename, signers, output_folder=os.path.join('static', 'signed'))
+        filename = os.path.basename(output_path)
+        download_url = url_for('download_file', filename=filename)
+        return render_template("merge_success.html", message=message, download_url=url_for('download_file', filename=os.path.basename(output_path)))
     except Exception as e:
         logging.exception("❌ Merge failed:")
         flash(f"❌ Merge failed: {str(e)}")
@@ -377,6 +378,9 @@ def signer_statuses_api(pdf_filename):
         for name, email, has_signed in rows
     ])
 
+@app.route('/download/<filename>')
+def download_file(filename):
+    return send_from_directory('signed', filename, as_attachment=True)
 
 def init_db():
     conn = sqlite3.connect('signers.db')
@@ -403,15 +407,13 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
     import os
     import time
 
-    print("Signers received:", signers)
     base_name = os.path.splitext(pdf)[0]
     original_pdf_path = os.path.join('uploads', pdf)
     preview_path = os.path.join('static', base_name + '_preview.jpg')
 
     output_filename = f"{base_name}_merged_v{int(time.time())}.pdf"
-    output_path = os.path.join(output_folder, output_filename)
-    print("Saving to:", output_path)
-    os.makedirs(output_folder, exist_ok=True)
+    output_path = os.path.join('signed', output_filename)
+    os.makedirs('signed', exist_ok=True)
 
     doc = fitz.open(original_pdf_path)
     page = doc[0]
@@ -442,25 +444,19 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
         page.insert_image(rect, filename=signature_path)
 
-        # Insert date
-        date_x = x_pdf + sig_width_pts + points_offset
-        date_y = y_pdf + (sig_height_pts / 2)
+        # Optional: insert date
         current_date = datetime.now().strftime("%B %d, %Y")
-
         page.insert_text(
-            fitz.Point(date_x, date_y),
+            fitz.Point(x_pdf, y_pdf + sig_height_pts + points_offset),
             current_date,
             fontsize=10,
             fontname="helv",
             color=(0, 0, 0)
         )
-    try:
-        doc.save(output_path)
-        print("✅ Merged PDF saved:", output_path)
-    except Exception as e:
-        print("❌ Failed to save PDF:", e)        
+
+    doc.save(output_path)
     doc.close()
-    return output_path
+    return output_filename  # Return just the filename now
 
 
 from pyngrok import ngrok, conf
