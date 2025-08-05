@@ -403,12 +403,14 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
     import os
     import time
 
+    print("Signers received:", signers)
     base_name = os.path.splitext(pdf)[0]
     original_pdf_path = os.path.join('uploads', pdf)
     preview_path = os.path.join('static', base_name + '_preview.jpg')
 
     output_filename = f"{base_name}_merged_v{int(time.time())}.pdf"
     output_path = os.path.join(output_folder, output_filename)
+    print("Saving to:", output_path)
     os.makedirs(output_folder, exist_ok=True)
 
     doc = fitz.open(original_pdf_path)
@@ -452,8 +454,11 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
             fontname="helv",
             color=(0, 0, 0)
         )
-
-    doc.save(output_path)
+    try:
+        doc.save(output_path)
+        print("✅ Merged PDF saved:", output_path)
+    except Exception as e:
+        print("❌ Failed to save PDF:", e)        
     doc.close()
     return output_path
 
