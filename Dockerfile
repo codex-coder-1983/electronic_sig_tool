@@ -1,32 +1,29 @@
-# Use an official Python image
+# Use official Python 3.10 slim image
 FROM python:3.10-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Set work directory
+WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    libglib2.0-0 \
-    libxext6 \
-    libsm6 \
-    libxrender1 \
-    libpoppler-cpp-dev \
     build-essential \
-    python3-dev \
-    pkg-config \
-    libmupdf-dev \
-    && apt-get clean \
+    libglib2.0-0 \
+    libgl1-mesa-glx \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
-WORKDIR /app
+# Install pip dependencies
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
 # Copy project files
 COPY . .
 
-# Install Python dependencies
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+# Expose the port your app runs on
+EXPOSE 10000
 
-# Set environment variable for Flask
-ENV PYTHONUNBUFFERED=1
-
-# Start command
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:10000"]
+# Run the app
+CMD ["python", "app.py"]
