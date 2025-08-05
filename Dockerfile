@@ -20,6 +20,9 @@ WORKDIR /app
 # Copy files
 COPY . /app
 
+# Install system dependencies including Poppler
+RUN apt-get update && apt-get install -y poppler-utils
+
 # Install Python packages
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
