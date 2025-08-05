@@ -221,6 +221,7 @@ def merge_route(pdf_filename):
         output_path = merge_signatures_into_pdf(pdf_filename, signers, output_folder=os.path.join('static', 'signed'))
         filename = os.path.basename(output_path)
         download_url = url_for('download_file', filename=filename)
+        message = "✅ Signatures successfully merged into the PDF."
         return render_template("merge_success.html", message=message, download_url=url_for('download_file', filename=os.path.basename(output_path)))
     except Exception as e:
         logging.exception("❌ Merge failed:")

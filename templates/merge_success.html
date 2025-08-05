@@ -1,67 +1,43 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Merge Successful</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center; /* Horizontal centering */
-            padding: 50px;
-            background-color: #f8f9fa;
-        }
-        .container {
-            display: inline-block;
-            padding: 30px;
-            border-radius: 8px;
-            background-color: white;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        .message {
-            font-size: 18px;
-            color: #333;
-            margin-bottom: 15px;
-        }
-        .countdown {
-            font-size: 14px;
-            color: #777;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <title>Merge Successful</title>
+  <meta http-equiv="refresh" content="3; url={{ download_url }}">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 50px;
+      background-color: #f8f9fa;
+    }
+    .message {
+      font-size: 1.2em;
+      color: #333;
+    }
+    .download-link {
+      margin-top: 20px;
+      display: inline-block;
+      font-weight: bold;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="message">{{ message }}</div>
-        <div class="countdown">
-            Redirecting to admin panel in <span id="count">5</span> seconds...
-        </div>
-    </div>
+  <h1>✅ Merge Successful!</h1>
+  <p class="message">Your signed PDF has been created and should start downloading shortly.</p>
+  <p class="download-link">
+    <a href="{{ download_url }}" download>⬇ Click here if your download does not start automatically</a>
+  </p>
 
-    <script>
-        const redirectUrl = "{{ redirect_url or url_for('admin') }}";
-        const downloadUrl = "{{ download_url }}";
-
-        // Trigger file download
-        window.onload = function () {
-            const link = document.createElement("a");
-            link.href = downloadUrl;
-            link.download = "";
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        };
-
-        // Countdown and redirect
-        let count = 5;
-        const countSpan = document.getElementById("count");
-
-        const timer = setInterval(() => {
-            count--;
-            countSpan.textContent = count;
-            if (count === 0) {
-                clearInterval(timer);
-                window.location.href = redirectUrl;
-            }
-        }, 1000);
-    </script>
+  <script>
+    window.onload = function () {
+      const a = document.createElement("a");
+      a.href = "{{ download_url }}";
+      a.download = "";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    };
+  </script>
 </body>
 </html>
