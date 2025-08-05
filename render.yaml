@@ -1,8 +1,9 @@
 services:
   - type: web
-    name: my-electronic-sig-tool
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    name: online-sig-app
+    env: docker
     plan: free
     branch: main
+    dockerfilePath: ./Dockerfile
+    ports:
+      - 10000
