@@ -261,37 +261,14 @@ def done_placing_signers(pdf):
     return render_template('signer_summary.html', pdf=pdf, signers=signers)
 
 
-def merge_pdf_signatures(pdf_filename):
-    import fitz
-    import sqlite3
-    from PIL import Image
-    from datetime import datetime
-    from math import radians, cos, sin
-    import os
+def merge_pdf_signatures(pdf, signers, output_folder='signed'):
+    base_name = os.path.splitext(pdf)[0]
+    original_pdf_path = os.path.join('uploads', pdf)
+    preview_path = os.path.join('static', base_name + '_preview.jpg')
 
-    conn = sqlite3.connect('signers.db')
-    c = conn.cursor()
-    c.execute('SELECT x, y, signature_path FROM signers WHERE pdf_filename=? AND has_signed=1', (pdf_filename,))
-    signers = c.fetchall()
-    conn.close()
-
-    if not signers:
-        return False, "No signatures to merge."
-
-    original_pdf_path = os.path.join('uploads', pdf_filename)
-    preview_name = os.path.splitext(pdf_filename)[0] + '_preview.jpg'
-    preview_path = os.path.join('static', preview_name)
-
-    if not os.path.exists(preview_path):
-        try:
-            from pdf2image import convert_from_path
-            POPPLER_PATH = '/usr/bin'
-            images = convert_from_path(original_pdf_path, first_page=1, last_page=1, poppler_path=POPPLER_PATH)
-            images[0].save(preview_path, 'JPEG')
-        except Exception as e:
-            return False, f"❌ Error regenerating preview: {e}"
-
-    output_path = os.path.join('signed', os.path.splitext(pdf_filename)[0] + '_final.pdf')
+    output_filename = f"{base_name}_merged_v{int(time.time())}.pdf"
+    output_path = os.path.join(output_folder, output_filename)
+    os.makedirs(output_folder, exist_ok=True)
 
     doc = fitz.open(original_pdf_path)
     page = doc[0]
@@ -300,35 +277,25 @@ def merge_pdf_signatures(pdf_filename):
 
     preview_image = Image.open(preview_path)
     img_width, img_height = preview_image.size
+
     scale_x = page_width / img_width
     scale_y = page_height / img_height
 
-    points_offset = 5
     for x_raw, y_raw, signature_path in signers:
         x_pdf = float(x_raw) * scale_x
         y_pdf = (img_height - float(y_raw)) * scale_y
 
-        # Load page rotation
-        rotation = page.rotation
-
-        # Open signature image
         sig_img = Image.open(signature_path)
         sig_width_px, sig_height_px = sig_img.size
         sig_width_pts = sig_width_px * scale_x
         sig_height_pts = sig_height_px * scale_y
 
-        # Center and clamp signature
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
-        # Apply rotation matrix
-        matrix = fitz.Matrix(1, 1).prerotate(rotation)
-
-        # Insert rotated signature
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path, rotate=0, matrix=matrix)
+        page.insert_image(rect, filename=signature_path, rotate=page.rotation)
 
-        # Insert rotated date
         current_date = datetime.now().strftime("%B %d, %Y")
         date_box_width = 100
         date_box_height = 20
@@ -342,23 +309,16 @@ def merge_pdf_signatures(pdf_filename):
             fontsize=10,
             fontname="helv",
             color=(0, 0, 0),
-            rotate=rotation,
+            rotate=page.rotation,
             align=0
         )
 
     doc.save(output_path)
     doc.close()
-    return True, output_path
+    return output_filename
 
 
 def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
-    import fitz  # PyMuPDF
-    from PIL import Image
-    from datetime import datetime
-    from math import radians, cos, sin
-    import os
-    import time
-
     base_name = os.path.splitext(pdf)[0]
     original_pdf_path = os.path.join('uploads', pdf)
     preview_path = os.path.join('static', base_name + '_preview.jpg')
@@ -378,53 +338,37 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
     scale_x = page_width / img_width
     scale_y = page_height / img_height
 
-    points_offset = 5  # Gap between signature and date
-
     for signer in signers:
         x_raw, y_raw, signature_path = signer["x"], signer["y"], signer["signature_path"]
 
-        # Load page rotation
-        rotation = page.rotation  # 0, 90, 180, 270
-
-        # Compute scaled coordinates
         x_pdf = float(x_raw) * scale_x
         y_pdf = (img_height - float(y_raw)) * scale_y
 
-        # Load signature image
         sig_img = Image.open(signature_path)
         sig_width_px, sig_height_px = sig_img.size
         sig_width_pts = sig_width_px * scale_x
         sig_height_pts = sig_height_px * scale_y
 
-        # Center and clamp signature
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
-        # Rotation-aware transform matrix
-        matrix = fitz.Matrix(1, 1).prerotate(rotation)
-
-        # Insert rotated signature
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path, rotate=0, matrix=matrix)
+        page.insert_image(rect, filename=signature_path, rotate=page.rotation)
 
-        # Prepare the date text
         current_date = datetime.now().strftime("%B %d, %Y")
-
-        # Define position and bounding box for date
         date_box_width = 100
         date_box_height = 20
         date_x = x_pdf + sig_width_pts + 5
         date_y = y_pdf + (sig_height_pts / 2) - (date_box_height / 2)
         date_rect = fitz.Rect(date_x, date_y, date_x + date_box_width, date_y + date_box_height)
 
-        # Insert rotated date text using the same rotation
         page.insert_textbox(
             date_rect,
             current_date,
             fontsize=10,
             fontname="helv",
             color=(0, 0, 0),
-            rotate=rotation,
+            rotate=page.rotation,
             align=0
         )
 
