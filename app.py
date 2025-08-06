@@ -319,8 +319,7 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
             current_date,
             fontsize=10,
             fontname="helv",
-            color=(0, 0, 0),
-            rotate=0
+            color=(0, 0, 0)
         )
         logging.info(f"Inserted date text: {current_date}")
 
@@ -393,8 +392,7 @@ def merge_pdf_signatures(pdf, signers, output_folder='signed'):
             current_date,
             fontsize=10,
             fontname="helv",
-            color=(0, 0, 0),
-            rotate=180,
+            color=(0, 0, 0)
             align=0
         )
         logger.info("📅 Date inserted (rotated 180°).")
