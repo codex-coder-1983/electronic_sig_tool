@@ -183,8 +183,18 @@ def sign_document(pdf, signer_id):
         conn.commit()
         conn.close()
 
-        # Instead of merging, just show success
-        return render_template('success.html', message="✅ Signature uploaded successfully.")
+        # Merge single signature into a new PDF
+        signer_data = {
+            "x": x_raw,
+            "y": y_raw,
+            "signature_path": signature_path
+        }
+
+        output_filename = merge_signatures_into_pdf(pdf, signers=[signer_data])
+        download_url = url_for('download_file', filename=output_filename)
+
+        # Show success + trigger download
+        return render_template('merge_success.html', download_url=download_url)
 
     # GET request
     return render_template(
@@ -412,7 +422,7 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
     original_pdf_path = os.path.join('uploads', pdf)
     preview_path = os.path.join('static', base_name + '_preview.jpg')
 
-    output_filename = f"{base_name}_merged_v{int(time.time())}.pdf"
+    output_filename = f"{base_name}_signed_by_{signers[0].get('signer_id', 'unknown')}_v{int(time.time())}.pdf"
     output_path = os.path.join('signed', output_filename)
     os.makedirs('signed', exist_ok=True)
 
