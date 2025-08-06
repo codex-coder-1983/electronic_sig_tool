@@ -263,10 +263,13 @@ def done_placing_signers(pdf):
 
 def merge_pdf_signatures(pdf_filename):
     import fitz
-    from PIL import Image
+    from PIL import Image, ImageOps
     from datetime import datetime
     import os
     import sqlite3
+
+    points_offset = 5
+    size_date_font = 10
 
     conn = sqlite3.connect('signers.db')
     c = conn.cursor()
@@ -281,11 +284,16 @@ def merge_pdf_signatures(pdf_filename):
     preview_name = os.path.splitext(pdf_filename)[0] + '_preview.jpg'
     preview_path = os.path.join('static', preview_name)
 
+    if not os.path.exists(preview_path):
+        from pdf2image import convert_from_path
+        POPPLER_PATH = '/usr/bin'  # Adjust if needed
+        images = convert_from_path(original_pdf_path, first_page=1, last_page=1, poppler_path=POPPLER_PATH)
+        images[0].save(preview_path, 'JPEG')
+
     output_path = os.path.join('signed', os.path.splitext(pdf_filename)[0] + '_final.pdf')
 
     doc = fitz.open(original_pdf_path)
     page = doc[0]
-    rotation = page.rotation
     page_width = page.rect.width
     page_height = page.rect.height
 
@@ -295,23 +303,14 @@ def merge_pdf_signatures(pdf_filename):
     scale_y = page_height / img_height
 
     for x_raw, y_raw, signature_path in signers:
-        x_raw = float(x_raw)
-        y_raw = float(y_raw)
-
-        if rotation == 180:
-            x_pdf = (img_width - x_raw) * scale_x
-            y_pdf = y_raw * scale_y
-        elif rotation == 90:
-            x_pdf = y_raw * scale_x
-            y_pdf = x_raw * scale_y
-        elif rotation == 270:
-            x_pdf = (img_height - y_raw) * scale_x
-            y_pdf = (img_width - x_raw) * scale_y
-        else:
-            x_pdf = x_raw * scale_x
-            y_pdf = (img_height - y_raw) * scale_y
+        x_pdf = float(x_raw) * scale_x
+        y_pdf = (img_height - float(y_raw)) * scale_y
 
         sig_img = Image.open(signature_path)
+        sig_img_flipped = ImageOps.flip(sig_img)
+        flipped_path = signature_path.replace(".png", "_flipped.png")
+        sig_img_flipped.save(flipped_path)
+
         sig_width_px, sig_height_px = sig_img.size
         sig_width_pts = sig_width_px * scale_x
         sig_height_pts = sig_height_px * scale_y
@@ -320,26 +319,29 @@ def merge_pdf_signatures(pdf_filename):
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path)
+        page.insert_image(rect, filename=flipped_path)
 
         current_date = datetime.now().strftime("%B %d, %Y")
-        date_x = x_pdf + sig_width_pts + 5
-        date_y = y_pdf + sig_height_pts / 2
+        date_x = x_pdf + sig_width_pts + points_offset
+        date_y = y_pdf + sig_height_pts / 2 - 5
+
         page.insert_text(
             fitz.Point(date_x, date_y),
             current_date,
-            fontsize=10,
+            fontsize=size_date_font,
             fontname="helv",
             color=(0, 0, 0)
         )
 
     doc.save(output_path)
     doc.close()
+
     return True, output_path
+
 
 def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
     import fitz  # PyMuPDF
-    from PIL import Image
+    from PIL import Image, ImageOps
     from datetime import datetime
     import os
     import time
@@ -354,7 +356,6 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
 
     doc = fitz.open(original_pdf_path)
     page = doc[0]
-    rotation = page.rotation
     page_width = page.rect.width
     page_height = page.rect.height
 
@@ -364,41 +365,36 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
     scale_x = page_width / img_width
     scale_y = page_height / img_height
 
+    points_offset = 5  # Space between signature and date
+
     for signer in signers:
         x_raw, y_raw, signature_path = signer["x"], signer["y"], signer["signature_path"]
 
-        x_raw = float(x_raw)
-        y_raw = float(y_raw)
+        x_pdf = float(x_raw) * scale_x
+        y_pdf = (img_height - float(y_raw)) * scale_y
 
-        # Coordinate correction based on page rotation
-        if rotation == 180:
-            x_pdf = (img_width - x_raw) * scale_x
-            y_pdf = y_raw * scale_y
-        elif rotation == 90:
-            x_pdf = y_raw * scale_x
-            y_pdf = x_raw * scale_y
-        elif rotation == 270:
-            x_pdf = (img_height - y_raw) * scale_x
-            y_pdf = (img_width - x_raw) * scale_y
-        else:
-            x_pdf = x_raw * scale_x
-            y_pdf = (img_height - y_raw) * scale_y
-
+        # Open and flip the image vertically
         sig_img = Image.open(signature_path)
+        sig_img_flipped = ImageOps.flip(sig_img)
+        flipped_path = signature_path.replace(".png", "_flipped.png")
+        sig_img_flipped.save(flipped_path)
+
+        # Get dimensions
         sig_width_px, sig_height_px = sig_img.size
         sig_width_pts = sig_width_px * scale_x
         sig_height_pts = sig_height_px * scale_y
 
+        # Center and clamp
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path)
+        page.insert_image(rect, filename=flipped_path)
 
-        # Insert date to the right of the signature
+        # Insert date to the right, horizontally aligned with center of signature
         current_date = datetime.now().strftime("%B %d, %Y")
-        date_x = x_pdf + sig_width_pts + 5
-        date_y = y_pdf + sig_height_pts / 2
+        date_x = x_pdf + sig_width_pts + points_offset
+        date_y = y_pdf + sig_height_pts / 2 - 5  # shift a bit up for better alignment
 
         page.insert_text(
             fitz.Point(date_x, date_y),
@@ -411,6 +407,7 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
     doc.save(output_path)
     doc.close()
     return output_filename
+
 
 @app.route('/download/<filename>')
 def download_signed_pdf(filename):
