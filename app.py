@@ -439,55 +439,49 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
     page_width = page.rect.width
     page_height = page.rect.height
 
-    rotation = page.rotation  # Get rotation of the page (0, 90, 180, 270)
+    # Handle rotated pages
+    rotate_matrix = fitz.Matrix(1, 1).preRotate(-page.rotation)
 
-    # Image preview size for scaling
     preview_image = Image.open(preview_path)
     img_width, img_height = preview_image.size
     scale_x = page_width / img_width
     scale_y = page_height / img_height
 
+    points_offset = 5  # small gap between signature and date
+    font_size = 10
+
     for signer in signers:
         x_raw, y_raw, signature_path = signer["x"], signer["y"], signer["signature_path"]
 
-        # Convert from image coordinates to PDF coordinates
         x_pdf = float(x_raw) * scale_x
         y_pdf = (img_height - float(y_raw)) * scale_y
 
-        # Load and size the signature image
         sig_img = Image.open(signature_path)
         sig_width_px, sig_height_px = sig_img.size
         sig_width_pts = sig_width_px * scale_x
         sig_height_pts = sig_height_px * scale_y
 
-        # Center signature
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
-        # Create image rectangle
+        # Signature placement
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
+        page.insert_image(rect, filename=signature_path, rotate=0, matrix=rotate_matrix)
 
-        # Invert page rotation for image and text insertion
-        image_rotation = -rotation % 360
-
-        # Insert the signature image with corrected rotation
-        page.insert_image(rect, filename=signature_path, rotate=image_rotation)
-
-        # Compute date position next to signature
-        date_x = x_pdf + sig_width_pts + 5
-        date_y = y_pdf + sig_height_pts * 0.75
-        date_rect = fitz.Rect(date_x, date_y, date_x + 100, date_y + 20)
-
-        # Insert date text, rotated to counter page rotation
+        # Date placement
         current_date = datetime.now().strftime("%B %d, %Y")
-        page.insert_textbox(
-            date_rect,
+        date_x = x_pdf + sig_width_pts + points_offset
+        date_y = y_pdf + sig_height_pts / 2
+
+        page.insert_text(
+            fitz.Point(date_x, date_y),
             current_date,
-            fontsize=10,
+            fontsize=font_size,
             fontname="helv",
             color=(0, 0, 0),
-            rotate=image_rotation,
-            align=0  # left aligned
+            rotate=0,
+            render_mode=0,
+            morph=rotate_matrix  # fix orientation
         )
 
     doc.save(output_path)
