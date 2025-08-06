@@ -456,25 +456,29 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
         sig_width_pts = sig_width_px * scale_x
         sig_height_pts = sig_height_px * scale_y
 
-        # Center and clamp signature
+        # Center and clamp
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
-        # Insert the signature
+        # Insert signature
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
         page.insert_image(rect, filename=signature_path, rotate=0)
 
-        # Insert the date to the right of the signature (horizontally aligned)
+        # Insert date
         current_date = datetime.now().strftime("%B %d, %Y")
-        date_x = x_pdf + sig_width_pts + points_offset  # Add small gap to the right
-        date_y = y_pdf + sig_height_pts / 2  # Vertically centered with signature
+        date_x = x_pdf + sig_width_pts + 5  # Small gap to right
+        date_y = y_pdf + sig_height_pts * 0.75  # Lower part of signature
 
-        page.insert_text(
-            fitz.Point(date_x, date_y),
+        # ✅ Fix upside-down text by using insert_textbox (not insert_text)
+        date_rect = fitz.Rect(date_x, date_y, date_x + 100, date_y + 20)
+        page.insert_textbox(
+            date_rect,
             current_date,
             fontsize=10,
             fontname="helv",
-            color=(0, 0, 0)
+            color=(0, 0, 0),
+            rotate=0,
+            align=0  # left aligned
         )
 
     doc.save(output_path)
