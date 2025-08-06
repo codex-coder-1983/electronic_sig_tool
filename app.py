@@ -262,6 +262,13 @@ def done_placing_signers(pdf):
 
 
 def merge_pdf_signatures(pdf_filename):
+    import fitz
+    from PIL import Image
+    from datetime import datetime
+    import os
+    import sqlite3
+    from pdf2image import convert_from_path
+
     conn = sqlite3.connect('signers.db')
     c = conn.cursor()
     c.execute('SELECT x, y, signature_path FROM signers WHERE pdf_filename=? AND has_signed=1', (pdf_filename,))
@@ -275,23 +282,24 @@ def merge_pdf_signatures(pdf_filename):
     preview_name = os.path.splitext(pdf_filename)[0] + '_preview.jpg'
     preview_path = os.path.join('static', preview_name)
 
-    # 🔽 Add this block to regenerate preview if missing
+    # 🔽 Regenerate preview if missing
     if not os.path.exists(preview_path):
         try:
-            POPPLER_PATH = '/usr/bin'
+            POPPLER_PATH = '/usr/bin'  # adjust for your system
             images = convert_from_path(original_pdf_path, first_page=1, last_page=1, poppler_path=POPPLER_PATH)
             images[0].save(preview_path, 'JPEG')
         except Exception as e:
             return False, f"❌ Error regenerating preview: {e}"
- 
+
     output_path = os.path.join('signed', os.path.splitext(pdf_filename)[0] + '_final.pdf')
+    os.makedirs('signed', exist_ok=True)
 
     doc = fitz.open(original_pdf_path)
     page = doc[0]
     page_width = page.rect.width
     page_height = page.rect.height
 
-    # Preview image for coordinate scaling
+    # Coordinate scaling
     preview_image = Image.open(preview_path)
     img_width, img_height = preview_image.size
     scale_x = page_width / img_width
@@ -306,22 +314,22 @@ def merge_pdf_signatures(pdf_filename):
         sig_width_pts = sig_width_px * scale_x
         sig_height_pts = sig_height_px * scale_y
 
-        x_pdf -= sig_width_pts / 2
-        y_pdf -= sig_height_pts / 2
-        x_pdf = max(0, min(x_pdf, page_width - sig_width_pts))
-        y_pdf = max(0, min(y_pdf, page_height - sig_height_pts))
+        # Clamp and center
+        x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
+        y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path)
+        page.insert_image(rect, filename=signature_path, rotate=0)
 
-        # Optional: Insert date next to signature
+        # 🗓️ Insert date to the right of the signature
         current_date = datetime.now().strftime("%B %d, %Y")
-        date_x = x_pdf + sig_width_pts + points_offset
-        date_y = y_pdf + (sig_height_pts / 2)
+        date_x = x_pdf + sig_width_pts + points_offset  # 5-point horizontal gap
+        date_y = y_pdf + sig_height_pts / 2  # vertically centered with signature
+
         page.insert_text(
             fitz.Point(date_x, date_y),
             current_date,
-            fontsize=size_date_font,
+            fontsize=10,
             fontname="helv",
             color=(0, 0, 0)
         )
@@ -423,8 +431,8 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
     preview_path = os.path.join('static', base_name + '_preview.jpg')
 
     output_filename = f"{base_name}_signed_by_{signers[0].get('signer_id', 'unknown')}_v{int(time.time())}.pdf"
-    output_path = os.path.join('signed', output_filename)
-    os.makedirs('signed', exist_ok=True)
+    output_path = os.path.join(output_folder, output_filename)
+    os.makedirs(output_folder, exist_ok=True)
 
     doc = fitz.open(original_pdf_path)
     page = doc[0]
@@ -448,17 +456,21 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
         sig_width_pts = sig_width_px * scale_x
         sig_height_pts = sig_height_px * scale_y
 
-        # Center and clamp
+        # Center and clamp signature
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
+        # Insert the signature
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path)
+        page.insert_image(rect, filename=signature_path, rotate=0)
 
-        # Optional: insert date
+        # Insert the date to the right of the signature (horizontally aligned)
         current_date = datetime.now().strftime("%B %d, %Y")
+        date_x = x_pdf + sig_width_pts + points_offset  # Add small gap to the right
+        date_y = y_pdf + sig_height_pts / 2  # Vertically centered with signature
+
         page.insert_text(
-            fitz.Point(x_pdf, y_pdf + sig_height_pts + points_offset),
+            fitz.Point(date_x, date_y),
             current_date,
             fontsize=10,
             fontname="helv",
@@ -467,7 +479,7 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
 
     doc.save(output_path)
     doc.close()
-    return output_filename  # Return just the filename now
+    return output_filename
 
 
 from pyngrok import ngrok, conf
