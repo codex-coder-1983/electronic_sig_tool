@@ -270,7 +270,6 @@ def merge_pdf_signatures(pdf_path, signers, output_path):
     page = doc[0]
     page_width = page.rect.width
     page_height = page.rect.height
-    rotation = page.rotation
 
     preview_path = pdf_path.replace("uploads", "static").replace(".pdf", "_preview.jpg")
     preview_image = Image.open(preview_path)
@@ -282,7 +281,10 @@ def merge_pdf_signatures(pdf_path, signers, output_path):
         x_pdf = float(x_raw) * scale_x
         y_pdf = (img_height - float(y_raw)) * scale_y
 
-        sig_img = Image.open(signature_path)
+        sig_img = Image.open(signature_path).rotate(180, expand=True)
+        rotated_sig_path = signature_path.replace(".png", "_rotated.png")
+        sig_img.save(rotated_sig_path)
+
         sig_width_pts = sig_img.width * scale_x
         sig_height_pts = sig_img.height * scale_y
 
@@ -290,7 +292,7 @@ def merge_pdf_signatures(pdf_path, signers, output_path):
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path, rotate=rotation)
+        page.insert_image(rect, filename=rotated_sig_path)
 
         current_date = datetime.now().strftime("%B %d, %Y")
         date_x = x_pdf + sig_width_pts + 5
@@ -303,15 +305,16 @@ def merge_pdf_signatures(pdf_path, signers, output_path):
             fontsize=10,
             fontname="helv",
             color=(0, 0, 0),
-            rotate=rotation
+            rotate=180
         )
 
     doc.save(output_path)
     doc.close()
 
 
+
 def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
-    import fitz  # PyMuPDF
+    import fitz
     from PIL import Image
     from datetime import datetime
     import os
@@ -328,7 +331,6 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
     page = doc[0]
     page_width = page.rect.width
     page_height = page.rect.height
-    rotation = page.rotation  # typically 0, 90, 180, or 270
 
     preview_image = Image.open(preview_path)
     img_width, img_height = preview_image.size
@@ -338,23 +340,23 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
     for signer in signers:
         x_raw, y_raw, signature_path = signer["x"], signer["y"], signer["signature_path"]
 
-        # Translate coordinates
         x_pdf = float(x_raw) * scale_x
         y_pdf = (img_height - float(y_raw)) * scale_y
 
-        # Load signature image
-        sig_img = Image.open(signature_path)
+        sig_img = Image.open(signature_path).rotate(180, expand=True)
+        rotated_sig_path = signature_path.replace(".png", "_rotated.png")
+        sig_img.save(rotated_sig_path)
+
         sig_width_pts = sig_img.width * scale_x
         sig_height_pts = sig_img.height * scale_y
 
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
-        # Signature rectangle
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path, rotate=rotation)
+        page.insert_image(rect, filename=rotated_sig_path)
 
-        # Date beside signature
+        # Insert upright date (180° flip)
         current_date = datetime.now().strftime("%B %d, %Y")
         date_x = x_pdf + sig_width_pts + 5
         date_y = y_pdf + sig_height_pts / 2
@@ -366,7 +368,7 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
             fontsize=10,
             fontname="helv",
             color=(0, 0, 0),
-            rotate=rotation
+            rotate=180  # Flip the date upright
         )
 
     doc.save(output_path)
