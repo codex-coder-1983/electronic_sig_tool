@@ -262,13 +262,13 @@ def done_placing_signers(pdf):
 
 
 def merge_pdf_signatures(pdf_filename):
-    import fitz
+    import sqlite3
+    import fitz  # PyMuPDF
     from PIL import Image
     from datetime import datetime
     import os
-    import sqlite3
-    from pdf2image import convert_from_path
 
+    # Load signer data from database
     conn = sqlite3.connect('signers.db')
     c = conn.cursor()
     c.execute('SELECT x, y, signature_path FROM signers WHERE pdf_filename=? AND has_signed=1', (pdf_filename,))
@@ -278,65 +278,113 @@ def merge_pdf_signatures(pdf_filename):
     if not signers:
         return False, "No signatures to merge."
 
+    # Prepare paths
     original_pdf_path = os.path.join('uploads', pdf_filename)
     preview_name = os.path.splitext(pdf_filename)[0] + '_preview.jpg'
     preview_path = os.path.join('static', preview_name)
+    output_path = os.path.join('signed', os.path.splitext(pdf_filename)[0] + '_final.pdf')
+    os.makedirs('signed', exist_ok=True)
 
-    # 🔽 Regenerate preview if missing
+    # Rebuild preview if missing
     if not os.path.exists(preview_path):
         try:
-            POPPLER_PATH = '/usr/bin'  # adjust for your system
+            from pdf2image import convert_from_path
+            POPPLER_PATH = '/usr/bin'
             images = convert_from_path(original_pdf_path, first_page=1, last_page=1, poppler_path=POPPLER_PATH)
             images[0].save(preview_path, 'JPEG')
         except Exception as e:
             return False, f"❌ Error regenerating preview: {e}"
 
-    output_path = os.path.join('signed', os.path.splitext(pdf_filename)[0] + '_final.pdf')
-    os.makedirs('signed', exist_ok=True)
-
+    # Open PDF and image preview
     doc = fitz.open(original_pdf_path)
     page = doc[0]
+    rotation = page.rotation
     page_width = page.rect.width
     page_height = page.rect.height
 
-    # Coordinate scaling
     preview_image = Image.open(preview_path)
     img_width, img_height = preview_image.size
     scale_x = page_width / img_width
     scale_y = page_height / img_height
 
+    points_offset = 5
+    date_font_size = 10
+
     for x_raw, y_raw, signature_path in signers:
-        x_pdf = float(x_raw) * scale_x
-        y_pdf = (img_height - float(y_raw)) * scale_y
+        x_raw = float(x_raw)
+        y_raw = float(y_raw)
+
+        # Convert coordinates from preview to PDF space
+        x_pdf = x_raw * scale_x
+        y_pdf = (img_height - y_raw) * scale_y
 
         sig_img = Image.open(signature_path)
         sig_width_px, sig_height_px = sig_img.size
         sig_width_pts = sig_width_px * scale_x
         sig_height_pts = sig_height_px * scale_y
 
-        # Clamp and center
-        x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
-        y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
+        # Center and clamp
+        x_pdf -= sig_width_pts / 2
+        y_pdf -= sig_height_pts / 2
+        x_pdf = max(0, min(x_pdf, page_width - sig_width_pts))
+        y_pdf = max(0, min(y_pdf, page_height - sig_height_pts))
 
-        rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path, rotate=0)
+        # Adjust placement per rotation
+        if rotation == 0:
+            img_rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
+            date_x = x_pdf + sig_width_pts + points_offset
+            date_y = y_pdf + sig_height_pts / 2
+            img_rotation = 0
+        elif rotation == 180:
+            img_rect = fitz.Rect(
+                page_width - x_pdf - sig_width_pts,
+                page_height - y_pdf - sig_height_pts,
+                page_width - x_pdf,
+                page_height - y_pdf
+            )
+            date_x = img_rect.x0 - 200
+            date_y = img_rect.y0 + sig_height_pts / 2
+            img_rotation = 180
+        elif rotation == 90:
+            img_rect = fitz.Rect(
+                y_pdf,
+                page_width - x_pdf - sig_width_pts,
+                y_pdf + sig_height_pts,
+                page_width - x_pdf
+            )
+            date_x = img_rect.x1 + points_offset
+            date_y = (img_rect.y0 + img_rect.y1) / 2
+            img_rotation = 90
+        elif rotation == 270:
+            img_rect = fitz.Rect(
+                page_height - y_pdf - sig_height_pts,
+                x_pdf,
+                page_height - y_pdf,
+                x_pdf + sig_width_pts
+            )
+            date_x = img_rect.x1 + points_offset
+            date_y = (img_rect.y0 + img_rect.y1) / 2
+            img_rotation = 270
+        else:
+            img_rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
+            date_x = x_pdf + sig_width_pts + points_offset
+            date_y = y_pdf + sig_height_pts / 2
+            img_rotation = 0
 
-        # 🗓️ Insert date to the right of the signature
-        current_date = datetime.now().strftime("%B %d, %Y")
-        date_x = x_pdf + sig_width_pts + points_offset  # 5-point horizontal gap
-        date_y = y_pdf + sig_height_pts / 2  # vertically centered with signature
+        # Insert signature
+        page.insert_image(img_rect, filename=signature_path, rotate=img_rotation)
 
+        # Insert date
         page.insert_text(
             fitz.Point(date_x, date_y),
-            current_date,
-            fontsize=10,
+            datetime.now().strftime("%B %d, %Y"),
+            fontsize=date_font_size,
             fontname="helv",
             color=(0, 0, 0)
         )
 
     doc.save(output_path)
     doc.close()
-
     return True, output_path
 
 
@@ -448,7 +496,7 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
     scale_x = page_width / img_width
     scale_y = page_height / img_height
 
-    points_offset = 5  # spacing between signature and date
+    points_offset = 5
     date_font_size = 10
 
     for signer in signers:
@@ -456,43 +504,72 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
         y_raw = float(signer["y"])
         signature_path = signer["signature_path"]
 
-        # --- Convert to PDF coordinates ---
+        # Convert screen coords to PDF coords
         x_pdf = x_raw * scale_x
-        y_pdf = (img_height - y_raw) * scale_y  # invert Y
+        y_pdf = (img_height - y_raw) * scale_y
 
-        # --- Load signature image to get size in points ---
+        # Open image to get dimensions
         sig_img = Image.open(signature_path)
         sig_width_px, sig_height_px = sig_img.size
         sig_width_pts = sig_width_px * scale_x
         sig_height_pts = sig_height_px * scale_y
 
-        # --- Center the signature around the clicked point ---
+        # Initial placement (centered)
         x_pdf -= sig_width_pts / 2
         y_pdf -= sig_height_pts / 2
         x_pdf = max(0, min(x_pdf, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf, page_height - sig_height_pts))
 
-        # --- Adjust for page rotation (fix upside-down signature/date) ---
-        if rotation == 180:
-            x_pdf = page_width - x_pdf - sig_width_pts
-            y_pdf = page_height - y_pdf - sig_height_pts
+        # Adjust coordinates based on page rotation
+        if rotation == 0:
+            img_rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
+            date_x = x_pdf + sig_width_pts + points_offset
+            date_y = y_pdf + sig_height_pts / 2
+            img_rotation = 0
+        elif rotation == 180:
+            img_rect = fitz.Rect(
+                page_width - x_pdf - sig_width_pts,
+                page_height - y_pdf - sig_height_pts,
+                page_width - x_pdf,
+                page_height - y_pdf
+            )
+            date_x = img_rect.x0 - 200  # shift left of signature
+            date_y = img_rect.y0 + sig_height_pts / 2
+            img_rotation = 180
         elif rotation == 90:
-            x_pdf, y_pdf = y_pdf, page_width - x_pdf - sig_width_pts
+            # Page rotated clockwise
+            img_rect = fitz.Rect(
+                y_pdf,
+                page_width - x_pdf - sig_width_pts,
+                y_pdf + sig_height_pts,
+                page_width - x_pdf
+            )
+            date_x = img_rect.x1 + points_offset
+            date_y = (img_rect.y0 + img_rect.y1) / 2
+            img_rotation = 90
         elif rotation == 270:
-            x_pdf, y_pdf = page_height - y_pdf - sig_height_pts, x_pdf
+            img_rect = fitz.Rect(
+                page_height - y_pdf - sig_height_pts,
+                x_pdf,
+                page_height - y_pdf,
+                x_pdf + sig_width_pts
+            )
+            date_x = img_rect.x1 + points_offset
+            date_y = (img_rect.y0 + img_rect.y1) / 2
+            img_rotation = 270
+        else:
+            img_rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
+            date_x = x_pdf + sig_width_pts + points_offset
+            date_y = y_pdf + sig_height_pts / 2
+            img_rotation = 0
 
-        # --- Insert signature image ---
-        rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path, rotate=0)
+        # --- Insert signature ---
+        page.insert_image(img_rect, filename=signature_path, rotate=img_rotation)
 
-        # --- Insert date to the right of the signature ---
-        current_date = datetime.now().strftime("%B %d, %Y")
-        date_x = x_pdf + sig_width_pts + points_offset
-        date_y = y_pdf + (sig_height_pts / 2)
-
+        # --- Insert date ---
         page.insert_text(
             fitz.Point(date_x, date_y),
-            current_date,
+            datetime.now().strftime("%B %d, %Y"),
             fontsize=date_font_size,
             fontname="helv",
             color=(0, 0, 0)
