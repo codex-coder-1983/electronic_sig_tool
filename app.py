@@ -308,40 +308,42 @@ def merge_pdf_signatures(pdf_filename):
         x_pdf = float(x_raw) * scale_x
         y_pdf = (img_height - float(y_raw)) * scale_y
 
+        # Load page rotation
+        rotation = page.rotation
+
+        # Open signature image
         sig_img = Image.open(signature_path)
         sig_width_px, sig_height_px = sig_img.size
         sig_width_pts = sig_width_px * scale_x
         sig_height_pts = sig_height_px * scale_y
 
+        # Center and clamp signature
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
+        # Apply rotation matrix
+        matrix = fitz.Matrix(1, 1).prerotate(rotation)
+
+        # Insert rotated signature
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path)
+        page.insert_image(rect, filename=signature_path, rotate=0, matrix=matrix)
 
+        # Insert rotated date
         current_date = datetime.now().strftime("%B %d, %Y")
-        date_x = x_pdf + sig_width_pts + points_offset
-        date_y = y_pdf + sig_height_pts / 2
-
-        angle_deg = 180
-        angle_rad = radians(angle_deg)
-        cos_a = cos(angle_rad)
-        sin_a = sin(angle_rad)
-
-        # Define a small text box area for the date
         date_box_width = 100
         date_box_height = 20
+        date_x = x_pdf + sig_width_pts + 5
+        date_y = y_pdf + (sig_height_pts / 2) - (date_box_height / 2)
         date_rect = fitz.Rect(date_x, date_y, date_x + date_box_width, date_y + date_box_height)
 
-        # Insert the date rotated by 180 degrees
         page.insert_textbox(
             date_rect,
             current_date,
             fontsize=10,
             fontname="helv",
             color=(0, 0, 0),
-            rotate=180,
-            align=0  # left align
+            rotate=rotation,
+            align=0
         )
 
     doc.save(output_path)
@@ -381,9 +383,14 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
     for signer in signers:
         x_raw, y_raw, signature_path = signer["x"], signer["y"], signer["signature_path"]
 
+        # Load page rotation
+        rotation = page.rotation  # 0, 90, 180, 270
+
+        # Compute scaled coordinates
         x_pdf = float(x_raw) * scale_x
         y_pdf = (img_height - float(y_raw)) * scale_y
 
+        # Load signature image
         sig_img = Image.open(signature_path)
         sig_width_px, sig_height_px = sig_img.size
         sig_width_pts = sig_width_px * scale_x
@@ -393,34 +400,32 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
-        # Insert the signature
+        # Rotation-aware transform matrix
+        matrix = fitz.Matrix(1, 1).prerotate(rotation)
+
+        # Insert rotated signature
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path)
+        page.insert_image(rect, filename=signature_path, rotate=0, matrix=matrix)
 
-        # Insert the date with upright rotation (180° if needed)
+        # Prepare the date text
         current_date = datetime.now().strftime("%B %d, %Y")
-        date_x = x_pdf + sig_width_pts + points_offset
-        date_y = y_pdf + sig_height_pts / 2
 
-        angle_deg = 180
-        angle_rad = radians(angle_deg)
-        cos_a = cos(angle_rad)
-        sin_a = sin(angle_rad)
-
-        # Define a small text box area for the date
+        # Define position and bounding box for date
         date_box_width = 100
         date_box_height = 20
+        date_x = x_pdf + sig_width_pts + 5
+        date_y = y_pdf + (sig_height_pts / 2) - (date_box_height / 2)
         date_rect = fitz.Rect(date_x, date_y, date_x + date_box_width, date_y + date_box_height)
 
-        # Insert the date rotated by 180 degrees
+        # Insert rotated date text using the same rotation
         page.insert_textbox(
             date_rect,
             current_date,
             fontsize=10,
             fontname="helv",
             color=(0, 0, 0),
-            rotate=180,
-            align=0  # left align
+            rotate=rotation,
+            align=0
         )
 
     doc.save(output_path)
