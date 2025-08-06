@@ -228,7 +228,7 @@ def merge_route(pdf_filename):
     signers = [{"x": x, "y": y, "signature_path": sig} for x, y, sig in rows]
 
     try:
-        output_path = merge_signatures_into_pdf(pdf_filename, signers, output_folder=os.path.join('static', 'signed'))
+        output_path = merge_signatures_into_pdf(pdf_filename, signers, output_folder='signed')
         filename = os.path.basename(output_path)
         download_url = url_for('download_file', filename=filename)
         sms = "✅ Signatures successfully merged into the PDF."
