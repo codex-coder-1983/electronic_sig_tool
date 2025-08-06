@@ -439,45 +439,54 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
     page_width = page.rect.width
     page_height = page.rect.height
 
+    rotation = page.rotation  # Get rotation of the page (0, 90, 180, 270)
+
+    # Image preview size for scaling
     preview_image = Image.open(preview_path)
     img_width, img_height = preview_image.size
-
     scale_x = page_width / img_width
     scale_y = page_height / img_height
 
     for signer in signers:
         x_raw, y_raw, signature_path = signer["x"], signer["y"], signer["signature_path"]
 
+        # Convert from image coordinates to PDF coordinates
         x_pdf = float(x_raw) * scale_x
         y_pdf = (img_height - float(y_raw)) * scale_y
 
+        # Load and size the signature image
         sig_img = Image.open(signature_path)
         sig_width_px, sig_height_px = sig_img.size
         sig_width_pts = sig_width_px * scale_x
         sig_height_pts = sig_height_px * scale_y
 
-        # Center and clamp
+        # Center signature
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
-        # Insert signature
+        # Create image rectangle
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path, rotate=0)
 
-        # Insert date
-        current_date = datetime.now().strftime("%B %d, %Y")
-        date_x = x_pdf + sig_width_pts + 5  # Small gap to right
-        date_y = y_pdf + sig_height_pts * 0.75  # Lower part of signature
+        # Invert page rotation for image and text insertion
+        image_rotation = -rotation % 360
 
-        # ✅ Fix upside-down text by using insert_textbox (not insert_text)
+        # Insert the signature image with corrected rotation
+        page.insert_image(rect, filename=signature_path, rotate=image_rotation)
+
+        # Compute date position next to signature
+        date_x = x_pdf + sig_width_pts + 5
+        date_y = y_pdf + sig_height_pts * 0.75
         date_rect = fitz.Rect(date_x, date_y, date_x + 100, date_y + 20)
+
+        # Insert date text, rotated to counter page rotation
+        current_date = datetime.now().strftime("%B %d, %Y")
         page.insert_textbox(
             date_rect,
             current_date,
             fontsize=10,
             fontname="helv",
             color=(0, 0, 0),
-            rotate=0,
+            rotate=image_rotation,
             align=0  # left aligned
         )
 
