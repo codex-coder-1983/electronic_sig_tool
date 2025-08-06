@@ -261,23 +261,41 @@ def done_placing_signers(pdf):
     return render_template('signer_summary.html', pdf=pdf, signers=signers)
 
 
-def merge_pdf_signatures(pdf, signers, output_folder='signed'):
-    base_name = os.path.splitext(pdf)[0]
-    original_pdf_path = os.path.join('uploads', pdf)
-    preview_path = os.path.join('static', base_name + '_preview.jpg')
+def merge_pdf_signatures(pdf_filename):
+    import sqlite3
+    import os
+    from datetime import datetime
+    import fitz
+    from PIL import Image
 
-    output_filename = f"{base_name}_merged_v{int(time.time())}.pdf"
-    output_path = os.path.join(output_folder, output_filename)
-    os.makedirs(output_folder, exist_ok=True)
+    conn = sqlite3.connect('signers.db')
+    c = conn.cursor()
+    c.execute('SELECT x, y, signature_path FROM signers WHERE pdf_filename=? AND has_signed=1', (pdf_filename,))
+    signers = c.fetchall()
+    conn.close()
+
+    if not signers:
+        return False, "No signatures to merge."
+
+    original_pdf_path = os.path.join('uploads', pdf_filename)
+    preview_path = os.path.join('static', os.path.splitext(pdf_filename)[0] + '_preview.jpg')
+    output_path = os.path.join('signed', os.path.splitext(pdf_filename)[0] + '_final.pdf')
+
+    if not os.path.exists(preview_path):
+        try:
+            from pdf2image import convert_from_path
+            images = convert_from_path(original_pdf_path, first_page=1, last_page=1, poppler_path='/usr/bin')
+            images[0].save(preview_path, 'JPEG')
+        except Exception as e:
+            return False, f"❌ Error regenerating preview: {e}"
 
     doc = fitz.open(original_pdf_path)
     page = doc[0]
-    page_width = page.rect.width
-    page_height = page.rect.height
+    rotation = page.rotation
+    page_width, page_height = page.rect.width, page.rect.height
 
     preview_image = Image.open(preview_path)
     img_width, img_height = preview_image.size
-
     scale_x = page_width / img_width
     scale_y = page_height / img_height
 
@@ -286,39 +304,51 @@ def merge_pdf_signatures(pdf, signers, output_folder='signed'):
         y_pdf = (img_height - float(y_raw)) * scale_y
 
         sig_img = Image.open(signature_path)
-        sig_width_px, sig_height_px = sig_img.size
-        sig_width_pts = sig_width_px * scale_x
-        sig_height_pts = sig_height_px * scale_y
+        sig_width_pts = sig_img.width * scale_x
+        sig_height_pts = sig_img.height * scale_y
 
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path, rotate=page.rotation)
+        page.insert_image(rect, filename=signature_path, rotate=rotation)
 
         current_date = datetime.now().strftime("%B %d, %Y")
-        date_box_width = 100
-        date_box_height = 20
         date_x = x_pdf + sig_width_pts + 5
-        date_y = y_pdf + (sig_height_pts / 2) - (date_box_height / 2)
-        date_rect = fitz.Rect(date_x, date_y, date_x + date_box_width, date_y + date_box_height)
+        date_y = y_pdf + sig_height_pts / 2
+
+        if rotation == 180:
+            angle = 180
+        elif rotation == 90:
+            angle = 270
+        elif rotation == 270:
+            angle = 90
+        else:
+            angle = 0
+
+        date_rect = fitz.Rect(date_x, date_y, date_x + 150, date_y + 20)
 
         page.insert_textbox(
             date_rect,
             current_date,
             fontsize=10,
             fontname="helv",
+            rotate=angle,
             color=(0, 0, 0),
-            rotate=page.rotation,
             align=0
         )
 
     doc.save(output_path)
     doc.close()
-    return output_filename
+    return True, output_path
 
 
 def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
+    from PIL import Image
+    from datetime import datetime
+    import os, time
+    import fitz  # PyMuPDF
+
     base_name = os.path.splitext(pdf)[0]
     original_pdf_path = os.path.join('uploads', pdf)
     preview_path = os.path.join('static', base_name + '_preview.jpg')
@@ -329,8 +359,8 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
 
     doc = fitz.open(original_pdf_path)
     page = doc[0]
-    page_width = page.rect.width
-    page_height = page.rect.height
+    rotation = page.rotation
+    page_width, page_height = page.rect.width, page.rect.height
 
     preview_image = Image.open(preview_path)
     img_width, img_height = preview_image.size
@@ -345,30 +375,39 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
         y_pdf = (img_height - float(y_raw)) * scale_y
 
         sig_img = Image.open(signature_path)
-        sig_width_px, sig_height_px = sig_img.size
-        sig_width_pts = sig_width_px * scale_x
-        sig_height_pts = sig_height_px * scale_y
+        sig_width_pts = sig_img.width * scale_x
+        sig_height_pts = sig_img.height * scale_y
 
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path, rotate=page.rotation)
 
+        page.insert_image(rect, filename=signature_path, rotate=rotation)
+
+        # Insert date upright regardless of page rotation
         current_date = datetime.now().strftime("%B %d, %Y")
-        date_box_width = 100
-        date_box_height = 20
         date_x = x_pdf + sig_width_pts + 5
-        date_y = y_pdf + (sig_height_pts / 2) - (date_box_height / 2)
-        date_rect = fitz.Rect(date_x, date_y, date_x + date_box_width, date_y + date_box_height)
+        date_y = y_pdf + sig_height_pts / 2
+
+        if rotation == 180:
+            angle = 180
+        elif rotation == 90:
+            angle = 270
+        elif rotation == 270:
+            angle = 90
+        else:
+            angle = 0
+
+        date_rect = fitz.Rect(date_x, date_y, date_x + 150, date_y + 20)
 
         page.insert_textbox(
             date_rect,
             current_date,
             fontsize=10,
             fontname="helv",
+            rotate=angle,
             color=(0, 0, 0),
-            rotate=page.rotation,
             align=0
         )
 
