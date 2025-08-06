@@ -440,7 +440,7 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
     page_height = page.rect.height
 
     # Handle rotated pages
-    rotate_matrix = fitz.Matrix(1, 1).preRotate(-page.rotation)
+    rotate_matrix = fitz.Matrix(1, 1).prerotate(-page.rotation)
 
     preview_image = Image.open(preview_path)
     img_width, img_height = preview_image.size
