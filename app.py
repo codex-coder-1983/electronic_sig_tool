@@ -325,12 +325,14 @@ def merge_pdf_signatures(pdf_filename):
         date_x = x_pdf + sig_width_pts + points_offset
         date_y = y_pdf + sig_height_pts / 2 - 5
 
-        page.insert_text(
-            fitz.Point(date_x, date_y),
+        date_rect = fitz.Rect(date_x, date_y - 5, date_x + 200, date_y + 20)  # Adjust width/height as needed
+        page.insert_textbox(
+            date_rect,
             current_date,
-            fontsize=size_date_font,
+            fontsize=10,
             fontname="helv",
-            color=(0, 0, 0)
+            color=(0, 0, 0),
+            rotate= -page.rotation  # Counteract page rotation
         )
 
     doc.save(output_path)
@@ -396,12 +398,14 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
         date_x = x_pdf + sig_width_pts + points_offset
         date_y = y_pdf + sig_height_pts / 2 - 5  # shift a bit up for better alignment
 
-        page.insert_text(
-            fitz.Point(date_x, date_y),
+        date_rect = fitz.Rect(date_x, date_y - 5, date_x + 200, date_y + 20)  # Adjust width/height as needed
+        page.insert_textbox(
+            date_rect,
             current_date,
             fontsize=10,
             fontname="helv",
-            color=(0, 0, 0)
+            color=(0, 0, 0),
+            rotate= -page.rotation  # Counteract page rotation
         )
 
     doc.save(output_path)
