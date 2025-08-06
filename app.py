@@ -328,20 +328,20 @@ def merge_pdf_signatures(pdf_filename):
         cos_a = cos(angle_rad)
         sin_a = sin(angle_rad)
 
-        matrix = fitz.Matrix(
-            cos_a, sin_a,
-            -sin_a, cos_a,
-            date_x - cos_a * date_x + sin_a * date_y,
-            date_y - sin_a * date_x - cos_a * date_y
-        )
+        # Define a small text box area for the date
+        date_box_width = 100
+        date_box_height = 20
+        date_rect = fitz.Rect(date_x, date_y, date_x + date_box_width, date_y + date_box_height)
 
-        page.insert_text(
-            fitz.Point(date_x, date_y),
+        # Insert the date rotated by 180 degrees
+        page.insert_textbox(
+            date_rect,
             current_date,
             fontsize=10,
             fontname="helv",
             color=(0, 0, 0),
-            matrix=matrix
+            rotate=180,
+            align=0  # left align
         )
 
     doc.save(output_path)
@@ -407,20 +407,20 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
         cos_a = cos(angle_rad)
         sin_a = sin(angle_rad)
 
-        matrix = fitz.Matrix(
-            cos_a, sin_a,
-            -sin_a, cos_a,
-            date_x - cos_a * date_x + sin_a * date_y,
-            date_y - sin_a * date_x - cos_a * date_y
-        )
+        # Define a small text box area for the date
+        date_box_width = 100
+        date_box_height = 20
+        date_rect = fitz.Rect(date_x, date_y, date_x + date_box_width, date_y + date_box_height)
 
-        page.insert_text(
-            fitz.Point(date_x, date_y),
+        # Insert the date rotated by 180 degrees
+        page.insert_textbox(
+            date_rect,
             current_date,
             fontsize=10,
             fontname="helv",
             color=(0, 0, 0),
-            matrix=matrix
+            rotate=180,
+            align=0  # left align
         )
 
     doc.save(output_path)
