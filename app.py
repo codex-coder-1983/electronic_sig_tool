@@ -261,41 +261,20 @@ def done_placing_signers(pdf):
     return render_template('signer_summary.html', pdf=pdf, signers=signers)
 
 
-def merge_pdf_signatures(pdf_filename):
-    import sqlite3
-    import os
-    from datetime import datetime
-    import fitz
+def merge_pdf_signatures(pdf_path, signers, output_path):
+    import fitz  # PyMuPDF
     from PIL import Image
+    from datetime import datetime
 
-    conn = sqlite3.connect('signers.db')
-    c = conn.cursor()
-    c.execute('SELECT x, y, signature_path FROM signers WHERE pdf_filename=? AND has_signed=1', (pdf_filename,))
-    signers = c.fetchall()
-    conn.close()
-
-    if not signers:
-        return False, "No signatures to merge."
-
-    original_pdf_path = os.path.join('uploads', pdf_filename)
-    preview_path = os.path.join('static', os.path.splitext(pdf_filename)[0] + '_preview.jpg')
-    output_path = os.path.join('signed', os.path.splitext(pdf_filename)[0] + '_final.pdf')
-
-    if not os.path.exists(preview_path):
-        try:
-            from pdf2image import convert_from_path
-            images = convert_from_path(original_pdf_path, first_page=1, last_page=1, poppler_path='/usr/bin')
-            images[0].save(preview_path, 'JPEG')
-        except Exception as e:
-            return False, f"❌ Error regenerating preview: {e}"
-
-    doc = fitz.open(original_pdf_path)
+    doc = fitz.open(pdf_path)
     page = doc[0]
-    rotation = page.rotation
-    page_width, page_height = page.rect.width, page.rect.height
+    page_width = page.rect.width
+    page_height = page.rect.height
 
+    preview_path = pdf_path.replace("uploads", "static").replace(".pdf", "_preview.jpg")
     preview_image = Image.open(preview_path)
     img_width, img_height = preview_image.size
+
     scale_x = page_width / img_width
     scale_y = page_height / img_height
 
@@ -310,45 +289,39 @@ def merge_pdf_signatures(pdf_filename):
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
+        # === 1. Insert signature upright using vertical flip ===
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path, rotate=rotation)
+        flip_sig_matrix = fitz.Matrix(1, 0, 0, -1, 0, 2 * y_pdf + sig_height_pts)
+        page.insert_image(rect, filename=signature_path, matrix=flip_sig_matrix)
 
+        # === 2. Insert upright date using vertical flip matrix ===
         current_date = datetime.now().strftime("%B %d, %Y")
         date_x = x_pdf + sig_width_pts + 5
         date_y = y_pdf + sig_height_pts / 2
-
-        if rotation == 180:
-            angle = 180
-        elif rotation == 90:
-            angle = 270
-        elif rotation == 270:
-            angle = 90
-        else:
-            angle = 0
-
         date_rect = fitz.Rect(date_x, date_y, date_x + 150, date_y + 20)
 
+        flip_text_matrix = fitz.Matrix(1, 0, 0, -1, 0, 2 * date_y + 20)
         page.insert_textbox(
             date_rect,
             current_date,
             fontsize=10,
             fontname="helv",
-            rotate=angle,
             color=(0, 0, 0),
-            align=0
+            align=0,
+            morph=flip_text_matrix
         )
 
     doc.save(output_path)
     doc.close()
-    return True, output_path
 
 
 
 def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
+    import fitz  # PyMuPDF
     from PIL import Image
     from datetime import datetime
-    import os, time
-    import fitz  # PyMuPDF
+    import os
+    import time
 
     base_name = os.path.splitext(pdf)[0]
     original_pdf_path = os.path.join('uploads', pdf)
@@ -360,8 +333,8 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
 
     doc = fitz.open(original_pdf_path)
     page = doc[0]
-    rotation = page.rotation
-    page_width, page_height = page.rect.width, page.rect.height
+    page_width = page.rect.width
+    page_height = page.rect.height
 
     preview_image = Image.open(preview_path)
     img_width, img_height = preview_image.size
@@ -382,40 +355,31 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
+        # === 1. Insert signature upright using vertical flip ===
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
+        flip_sig_matrix = fitz.Matrix(1, 0, 0, -1, 0, 2 * y_pdf + sig_height_pts)
+        page.insert_image(rect, filename=signature_path, matrix=flip_sig_matrix)
 
-        page.insert_image(rect, filename=signature_path, rotate=rotation)
-
-        # Insert date upright regardless of page rotation
+        # === 2. Insert upright date using morph ===
         current_date = datetime.now().strftime("%B %d, %Y")
         date_x = x_pdf + sig_width_pts + 5
         date_y = y_pdf + sig_height_pts / 2
-
-        if rotation == 180:
-            angle = 180
-        elif rotation == 90:
-            angle = 270
-        elif rotation == 270:
-            angle = 90
-        else:
-            angle = 0
-
         date_rect = fitz.Rect(date_x, date_y, date_x + 150, date_y + 20)
 
+        flip_text_matrix = fitz.Matrix(1, 0, 0, -1, 0, 2 * date_y + 20)
         page.insert_textbox(
             date_rect,
             current_date,
             fontsize=10,
             fontname="helv",
-            rotate=angle,
             color=(0, 0, 0),
-            align=0
+            align=0,
+            morph=flip_text_matrix
         )
 
     doc.save(output_path)
     doc.close()
     return output_filename
-
 
 
 @app.route('/download/<filename>')
