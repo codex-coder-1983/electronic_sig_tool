@@ -271,7 +271,8 @@ def merge_signatures_into_pdf(pdf_path, signers, output_folder='signed'):
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
-    doc = fitz.open(pdf_path)
+    logging.info(f"Opening PDF from path: {os.path.join(app.config['UPLOAD_FOLDER'], pdf_path)}")
+    doc = fitz.open(os.path.join(app.config['UPLOAD_FOLDER'], pdf_path))
     page = doc[0]  # Assume single-page PDF
 
     page_width, page_height = page.rect.width, page.rect.height
