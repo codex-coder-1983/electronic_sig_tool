@@ -262,11 +262,9 @@ def sign_document(pdf, signer_id):
 
 @app.route('/merge/<pdf_filename>', methods=['POST'])
 def merge_route(pdf_filename):
-    # Server's Downloads folder
     downloads_dir = str(Path.home() / "Downloads")
     os.makedirs(downloads_dir, exist_ok=True)
 
-    # Get all signed signatures
     conn = sqlite3.connect('signers.db')
     c = conn.cursor()
     c.execute('SELECT x, y, signature_path FROM signers WHERE pdf_filename=? AND has_signed=1', (pdf_filename,))
@@ -280,15 +278,19 @@ def merge_route(pdf_filename):
     signers = [{"x": x, "y": y, "signature_path": sig} for x, y, sig in rows]
 
     try:
-        output_path = merge_signatures_into_pdf(pdf_filename, signers, output_folder='signed')
+        # Convert to (x, y, path) tuples for merge_pdf_signatures
+        signer_data = [(s["x"], s["y"], s["signature_path"]) for s in signers]
+
+        output_path = merge_pdf_signatures(pdf_filename, signer_data, output_folder='signed')
         filename = os.path.basename(output_path)
         download_url = url_for('download_file', filename=filename)
         sms = "✅ Signatures successfully merged into the PDF."
-        return render_template("merge_success.html", message=sms, download_url=url_for('download_file', filename=os.path.basename(output_path)))
+        return render_template("merge_success.html", message=sms, download_url=download_url)
     except Exception as e:
         logging.exception("❌ Merge failed:")
         flash(f"❌ Merge failed: {str(e)}")
-        return redirect(url_for('get_signers', pdf_filename=pdf_filename))  
+        return redirect(url_for('get_signers', pdf_filename=pdf_filename))
+ 
 
 
 @app.route('/set_merge_folder', methods=['POST'])
@@ -314,10 +316,11 @@ def done_placing_signers(pdf):
 
 
 def merge_signatures_into_pdf(pdf_path, signers, output_folder='signed'):
+    import fitz  # PyMuPDF
     import os
     import logging
-    from PIL import Image
     from datetime import datetime
+    from PIL import Image
 
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
@@ -326,74 +329,32 @@ def merge_signatures_into_pdf(pdf_path, signers, output_folder='signed'):
         upload_dir = app.config.get('UPLOAD_FOLDER', 'uploads')
         base_pdf_path = os.path.join(upload_dir, pdf_path)
         logger.info(f"Opening PDF from path: {base_pdf_path}")
+        doc = fitz.open(base_pdf_path)
+        page = doc[0]  # Assume single-page PDF
+
+        page_width, page_height = page.rect.width, page.rect.height
+        logger.info(f"Page size: width={page_width}, height={page_height}")
 
         img_preview_name = os.path.basename(pdf_path).replace(".pdf", "_preview.png")
         img_preview_path = os.path.join(upload_dir, img_preview_name)
 
         if not os.path.exists(img_preview_path):
-            logger.warning(f"⚠️ Preview image not found: {img_preview_path}. Using raw coordinates.")
-            fallback_signers = []
-            for signer in signers:
-                fallback_signers.append((signer["x"], signer["y"], signer["signature_path"]))
-            return merge_pdf_signatures(base_pdf_path, fallback_signers, output_folder)
+            logger.error(f"Preview image not found: {img_preview_path}")
+            raise FileNotFoundError(f"Preview image not found: {img_preview_path}")
 
-        # Preview image exists — calculate scaling
         img = Image.open(img_preview_path)
         img_width, img_height = img.size
-
-        import fitz  # PyMuPDF
-        doc = fitz.open(base_pdf_path)
-        page = doc[0]
-        page_width, page_height = page.rect.width, page.rect.height
-        doc.close()
-
         scale_x = page_width / img_width
         scale_y = page_height / img_height
-
-        adjusted_signers = []
-        for signer in signers:
-            x_raw = signer["x"]
-            y_raw = signer["y"]
-            sig_path = signer["signature_path"]
-            x_pdf = float(x_raw) * scale_x
-            y_pdf = (img_height - float(y_raw)) * scale_y
-            adjusted_signers.append((x_pdf, y_pdf, sig_path))
-
-        return merge_pdf_signatures(base_pdf_path, adjusted_signers, output_folder)
-
-    except Exception as e:
-        logger.exception("❌ Error while preparing signatures for merge")
-        raise
-
-
-def merge_pdf_signatures(pdf_path, signer_data, output_folder='signed'):
-    import fitz  # PyMuPDF
-    import os
-    import logging
-    from datetime import datetime
-    from PIL import Image
-
-    logger = logging.getLogger(__name__)
-    logger.info("📌 merge_pdf_signatures() called")
-
-    try:
-        doc = fitz.open(pdf_path)
-        page = doc[0]
-        page_width, page_height = page.rect.width, page.rect.height
         points_offset = 5
 
-        for x_pdf, y_pdf, signature_path in signer_data:
-            if not os.path.exists(signature_path):
-                logger.warning(f"⚠️ Signature image not found: {signature_path}")
-                continue
+        for signer in signers:
+            x_raw, y_raw, signature_path = signer["x"], signer["y"], signer["signature_path"]
+            x_pdf = float(x_raw) * scale_x
+            y_pdf = (img_height - float(y_raw)) * scale_y
 
             sig_img = Image.open(signature_path)
             sig_width_px, sig_height_px = sig_img.size
-
-            # Estimate scaling based on DPI and PDF points (72 pts/inch)
-            scale_x = page_width / 1000  # or tune this per your preview scale
-            scale_y = page_height / 1000
-
             sig_width_pts = sig_width_px * scale_x
             sig_height_pts = sig_height_px * scale_y
 
@@ -401,15 +362,17 @@ def merge_pdf_signatures(pdf_path, signer_data, output_folder='signed'):
             y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
             rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-            flip_matrix = fitz.Matrix(1, -1).preTranslate(0, -2 * y_pdf - sig_height_pts)
 
+            flip_matrix = fitz.Matrix(1, -1).preTranslate(0, -2 * y_pdf - sig_height_pts)
             page.insert_image(rect, filename=signature_path, matrix=flip_matrix)
             logger.info(f"Inserted signature at: {rect}")
 
             current_date = datetime.now().strftime("%B %d, %Y")
             date_x = x_pdf + sig_width_pts + points_offset
             date_y = y_pdf + sig_height_pts / 2
-            date_rect = fitz.Rect(date_x, date_y, date_x + 100, date_y + 20)
+            date_box_width = 100
+            date_box_height = 20
+            date_rect = fitz.Rect(date_x, date_y, date_x + date_box_width, date_y + date_box_height)
 
             page.insert_textbox(
                 date_rect,
@@ -419,18 +382,105 @@ def merge_pdf_signatures(pdf_path, signer_data, output_folder='signed'):
                 color=(0, 0, 0),
                 align=0
             )
-            logger.info(f"Inserted date: {current_date} at {date_rect}")
+            logger.info(f"Inserted date text: {current_date}")
 
         os.makedirs(output_folder, exist_ok=True)
-        output_filename = os.path.join(output_folder, os.path.basename(pdf_path))
+        output_filename = os.path.join(output_folder, os.path.basename(base_pdf_path))
         doc.save(output_filename)
         doc.close()
         logger.info(f"✅ PDF saved to: {output_filename}")
         return output_filename
 
     except Exception as e:
-        logger.exception("❌ Error during signature merging in PDF")
-        raise
+        logger.exception("❌ Error while merging signatures into PDF")
+        raise  # Optional: re-raise to propagate the error to the calling function or Flask route
+
+
+def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
+    import fitz  # PyMuPDF
+    import os
+    import logging
+    from datetime import datetime
+    from PIL import Image
+
+    logger = logging.getLogger(__name__)
+
+    doc = fitz.open(base_pdf_path)
+    page = doc[0]  # Single-page
+
+    page_width, page_height = page.rect.width, page.rect.height
+    logger.info(f"Page size: width={page_width}, height={page_height}")
+
+    # Determine preview image path
+    img_preview_name = os.path.basename(base_pdf_path).replace(".pdf", "_preview.png")
+    upload_dir = os.path.dirname(base_pdf_path)
+    img_preview_path = os.path.join(upload_dir, img_preview_name)
+
+    # ✅ Regenerate preview image if missing
+    if not os.path.exists(img_preview_path):
+        logger.warning(f"⚠️ Preview image not found. Attempting to regenerate: {img_preview_path}")
+        try:
+            from pdf2image import convert_from_path
+            POPPLER_PATH = '/usr/bin'  # Adjust if needed
+            images = convert_from_path(base_pdf_path, first_page=1, last_page=1, poppler_path=POPPLER_PATH)
+            images[0].save(img_preview_path, 'PNG')
+            logger.info(f"✅ Preview image regenerated: {img_preview_path}")
+        except Exception as e:
+            logger.error(f"❌ Failed to regenerate preview image: {e}")
+            raise FileNotFoundError(f"Could not regenerate preview image: {img_preview_path}")
+
+    # Continue with signature placement
+    img = Image.open(img_preview_path)
+    img_width, img_height = img.size
+    scale_x = page_width / img_width
+    scale_y = page_height / img_height
+    points_offset = 5
+
+    for x_raw, y_raw, signature_path in signers:
+        x_pdf = float(x_raw) * scale_x
+        y_pdf = (img_height - float(y_raw)) * scale_y
+
+        sig_img = Image.open(signature_path)
+        sig_width_px, sig_height_px = sig_img.size
+        sig_width_pts = sig_width_px * scale_x
+        sig_height_pts = sig_height_px * scale_y
+
+        # Clamp position to avoid overflow
+        x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
+        y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
+
+        rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
+
+        # Flip image vertically to ensure upright orientation
+        flip_matrix = fitz.Matrix(1, -1).preTranslate(0, -2 * y_pdf - sig_height_pts)
+        page.insert_image(rect, filename=signature_path, matrix=flip_matrix)
+        logger.info(f"🖊️ Signature inserted at: {rect}")
+
+        # Add date to the right of the signature
+        current_date = datetime.now().strftime("%B %d, %Y")
+        date_x = x_pdf + sig_width_pts + points_offset
+        date_y = y_pdf + sig_height_pts / 2
+
+        date_box_width = 100
+        date_box_height = 20
+        date_rect = fitz.Rect(date_x, date_y, date_x + date_box_width, date_y + date_box_height)
+
+        page.insert_textbox(
+            date_rect,
+            current_date,
+            fontsize=10,
+            fontname="helv",
+            color=(0, 0, 0),
+            align=0
+        )
+        logger.info(f"📅 Date inserted at rect: {date_rect}")
+
+    os.makedirs(output_folder, exist_ok=True)
+    output_filename = os.path.join(output_folder, os.path.basename(base_pdf_path))
+    doc.save(output_filename)
+    doc.close()
+    logger.info(f"✅ Final signed PDF saved to: {output_filename}")
+    return output_filename
 
 
 
