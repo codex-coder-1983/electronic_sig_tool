@@ -261,33 +261,32 @@ def done_placing_signers(pdf):
     return render_template('signer_summary.html', pdf=pdf, signers=signers)
 
 
-def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
+def merge_signatures_into_pdf(pdf_path, signers, output_folder='signed'):
+    import fitz  # PyMuPDF
+    import os
+    import logging
+    from datetime import datetime
+    from PIL import Image
+
     logging.basicConfig(level=logging.INFO)
-    base_name = os.path.splitext(pdf)[0]
-    original_pdf_path = os.path.join('uploads', pdf)
-    preview_path = os.path.join('static', base_name + '_preview.jpg')
+    logger = logging.getLogger(__name__)
 
-    output_filename = f"{base_name}_signed_by_{signers[0].get('signer_id', 'unknown')}_v{int(time.time())}.pdf"
-    output_path = os.path.join(output_folder, output_filename)
-    os.makedirs(output_folder, exist_ok=True)
+    doc = fitz.open(pdf_path)
+    page = doc[0]  # Assume single-page PDF
 
-    doc = fitz.open(original_pdf_path)
-    page = doc[0]
-    rotation = page.rotation
     page_width, page_height = page.rect.width, page.rect.height
+    logger.info(f"Page size: width={page_width}, height={page_height}")
 
-    logging.info(f"Page rotation: {rotation}")
-    logging.info(f"Page size: width={page_width}, height={page_height}")
-
-    preview_image = Image.open(preview_path)
-    img_width, img_height = preview_image.size
+    img_preview_path = pdf_path.replace(".pdf", "_preview.png")
+    img = Image.open(img_preview_path)
+    img_width, img_height = img.size
 
     scale_x = page_width / img_width
     scale_y = page_height / img_height
+    points_offset = 5
 
     for signer in signers:
-        x_raw, y_raw = signer["x"], signer["y"]
-        signature_path = signer["signature_path"]
+        x_raw, y_raw, signature_path = signer["x"], signer["y"], signer["signature_path"]
 
         x_pdf = float(x_raw) * scale_x
         y_pdf = (img_height - float(y_raw)) * scale_y
@@ -300,20 +299,19 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
-        logging.info(f"Signature image size (px): {sig_width_px}x{sig_height_px}")
-        logging.info(f"Signature position on PDF: x={x_pdf}, y={y_pdf}")
-
-        # Insert the signature (without rotation for now)
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path)
-        logging.info(f"Inserted signature at: {rect}")
 
-        # Date
+        # Flip the signature vertically to correct upside-down issue
+        flip_matrix = fitz.Matrix(1, -1).preTranslate(0, -2 * y_pdf - sig_height_pts)
+        page.insert_image(rect, filename=signature_path, matrix=flip_matrix)
+        logger.info(f"Inserted signature at: {rect}")
+
+        # Insert current date to the right of the signature
         current_date = datetime.now().strftime("%B %d, %Y")
-        date_x = x_pdf + sig_width_pts + 5  # small gap
+        date_x = x_pdf + sig_width_pts + points_offset
         date_y = y_pdf + sig_height_pts / 2
+        logger.info(f"Date text position: x={date_x}, y={date_y}")
 
-        logging.info(f"Date text position: x={date_x}, y={date_y}")
         page.insert_text(
             fitz.Point(date_x, date_y),
             current_date,
@@ -321,71 +319,68 @@ def merge_signatures_into_pdf(pdf, signers, output_folder='signed'):
             fontname="helv",
             color=(0, 0, 0)
         )
-        logging.info(f"Inserted date text: {current_date}")
+        logger.info(f"Inserted date text: {current_date}")
 
-    doc.save(output_path)
+    os.makedirs(output_folder, exist_ok=True)
+    output_filename = os.path.join(output_folder, os.path.basename(pdf_path))
+    doc.save(output_filename)
     doc.close()
+    logger.info(f"✅ PDF saved to: {output_filename}")
     return output_filename
 
-def merge_pdf_signatures(pdf, signers, output_folder='signed'):
-    logging.basicConfig(level=logging.INFO)
+
+def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
+    import fitz  # PyMuPDF
+    import os
+    import logging
+    from datetime import datetime
+    from PIL import Image
+
     logger = logging.getLogger(__name__)
 
-    base_name = os.path.splitext(pdf)[0]
-    original_pdf_path = os.path.join('uploads', pdf)
-    preview_path = os.path.join('static', base_name + '_preview.jpg')
+    doc = fitz.open(base_pdf_path)
+    page = doc[0]  # Single-page
 
-    output_filename = f"{base_name}_merged_v{int(time.time())}.pdf"
-    output_path = os.path.join(output_folder, output_filename)
-    os.makedirs(output_folder, exist_ok=True)
+    page_width, page_height = page.rect.width, page.rect.height
+    logger.info(f"Page size: width={page_width}, height={page_height}")
 
-    doc = fitz.open(original_pdf_path)
-    page = doc[0]
-    page_width = page.rect.width
-    page_height = page.rect.height
-    rotation = page.rotation
-
-    logger.info(f"🧭 Page size: {page_width} x {page_height}, rotation: {rotation}")
-
-    preview_image = Image.open(preview_path)
-    img_width, img_height = preview_image.size
+    img_preview_path = base_pdf_path.replace(".pdf", "_preview.png")
+    img = Image.open(img_preview_path)
+    img_width, img_height = img.size
 
     scale_x = page_width / img_width
     scale_y = page_height / img_height
-    logger.info(f"📐 Scale: scale_x={scale_x:.4f}, scale_y={scale_y:.4f}")
+    points_offset = 5
 
     for x_raw, y_raw, signature_path in signers:
-        logger.info(f"✍️  Processing signature from {signature_path} at raw coords: ({x_raw}, {y_raw})")
-
         x_pdf = float(x_raw) * scale_x
         y_pdf = (img_height - float(y_raw)) * scale_y
-        logger.info(f"➡️  Converted PDF coords: ({x_pdf:.2f}, {y_pdf:.2f})")
 
         sig_img = Image.open(signature_path)
         sig_width_px, sig_height_px = sig_img.size
         sig_width_pts = sig_width_px * scale_x
         sig_height_pts = sig_height_px * scale_y
-        logger.info(f"🖼️  Signature size: {sig_width_px}px x {sig_height_px}px = {sig_width_pts:.2f}pt x {sig_height_pts:.2f}pt")
 
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
-        logger.info(f"📌 Final placement: x={x_pdf:.2f}, y={y_pdf:.2f}")
-
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
-        page.insert_image(rect, filename=signature_path)
-        logger.info("✅ Signature image inserted.")
+
+        # Flip signature image vertically
+        flip_matrix = fitz.Matrix(1, -1).preTranslate(0, -2 * y_pdf - sig_height_pts)
+        page.insert_image(rect, filename=signature_path, matrix=flip_matrix)
+        logger.info(f"🖊️ Signature inserted at: {rect}")
 
         # Insert date
         current_date = datetime.now().strftime("%B %d, %Y")
-        date_x = x_pdf + sig_width_pts + 5  # small offset
+        date_x = x_pdf + sig_width_pts + points_offset
         date_y = y_pdf + sig_height_pts / 2
 
         date_box_width = 100
         date_box_height = 20
         date_rect = fitz.Rect(date_x, date_y, date_x + date_box_width, date_y + date_box_height)
 
-        logger.info(f"🕒 Inserting date at rect: {date_rect}")
+        logger.info(f"📍 Inserting date at rect: {date_rect}")
 
         page.insert_textbox(
             date_rect,
@@ -395,11 +390,13 @@ def merge_pdf_signatures(pdf, signers, output_folder='signed'):
             color=(0, 0, 0),
             align=0
         )
-        # logger.info("📅 Date inserted (rotated 180°).")
+        logger.info("📅 Date inserted upright.")
 
-    doc.save(output_path)
+    os.makedirs(output_folder, exist_ok=True)
+    output_filename = os.path.join(output_folder, os.path.basename(base_pdf_path))
+    doc.save(output_filename)
     doc.close()
-    logger.info(f"📄 PDF saved to {output_path}")
+    logger.info(f"✅ Final signed PDF saved to: {output_filename}")
     return output_filename
 
 
