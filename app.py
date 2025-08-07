@@ -61,83 +61,122 @@ def home():
 # Admin panel
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
+    import logging
+    logger = logging.getLogger(__name__)
+
     if request.method == 'POST':
-        pdf_file = request.files['pdf']
-        if not pdf_file or not pdf_file.filename.endswith('.pdf'):
-            return "Please upload a valid PDF."
+        pdf_file = request.files.get('pdf')
+        if not pdf_file or not pdf_file.filename.lower().endswith('.pdf'):
+            return "❌ Please upload a valid PDF."
 
         pdf_filename = secure_filename(pdf_file.filename)
         pdf_path = os.path.join(app.config['PDF_UPLOAD_FOLDER'], pdf_filename)
         pdf_file.save(pdf_path)
 
         try:
-            POPPLER_PATH = '/usr/bin'
-            images = convert_from_path(pdf_path, first_page=1, last_page=1, poppler_path=POPPLER_PATH)
+            # Check if preview image already exists
             preview_name = os.path.splitext(pdf_filename)[0] + '_preview.jpg'
             preview_path = os.path.join('static', preview_name)
-            images[0].save(preview_path, 'JPEG')
+
+            if not os.path.exists(preview_path):
+                logger.info(f"Generating preview for: {pdf_filename}")
+                POPPLER_PATH = '/usr/bin'  # Adjust if necessary
+                images = convert_from_path(pdf_path, first_page=1, last_page=1, poppler_path=POPPLER_PATH)
+                images[0].save(preview_path, 'JPEG')
+                logger.info(f"Preview saved at {preview_path}")
+            else:
+                logger.info(f"Preview already exists at {preview_path}")
+
         except Exception as e:
+            logger.error(f"Error converting PDF to preview image: {e}")
             return f"❌ Error converting PDF to image: {e}"
 
         return redirect(url_for('set_signature_positions', pdf=pdf_filename))
 
     return render_template('admin.html')
 
-# Signature placement
+
 @app.route('/set_positions/<pdf>', methods=['GET', 'POST'])
 def set_signature_positions(pdf):
+    import logging
+    logger = logging.getLogger(__name__)
+    pdf_filename = secure_filename(pdf)
+    pdf_path = os.path.join(app.config['PDF_UPLOAD_FOLDER'], pdf_filename)
+    preview_name = os.path.splitext(pdf_filename)[0] + '_preview.jpg'
+    preview_path = os.path.join('static', preview_name)
+
     if request.method == 'POST':
-        name = request.form['name']
-        email = request.form['email']
-        x = int(request.form['x'])
-        y = int(request.form['y'])
+        try:
+            name = request.form['name'].strip()
+            email = request.form['email'].strip()
+            x = int(request.form['x'])
+            y = int(request.form['y'])
+        except (KeyError, ValueError) as e:
+            logger.error(f"Invalid form data: {e}")
+            return "❌ Invalid input data", 400
 
         conn = sqlite3.connect('signers.db')
         c = conn.cursor()
 
-        # Get next sequence number for this PDF
-        c.execute('SELECT MAX(CAST(id AS INTEGER)) FROM signers WHERE pdf_filename = ?', (pdf,))
+        # Get next signer ID for this PDF
+        c.execute('SELECT MAX(CAST(id AS INTEGER)) FROM signers WHERE pdf_filename = ?', (pdf_filename,))
         row = c.fetchone()
         next_id = (row[0] or 0) + 1
         signer_id = str(next_id)
 
-        # Insert new signer
+        # Insert signer record
         c.execute('INSERT INTO signers (id, name, email, x, y, pdf_filename) VALUES (?, ?, ?, ?, ?, ?)',
-                  (signer_id, name, email, x, y, pdf))
+                  (signer_id, name, email, x, y, pdf_filename))
         conn.commit()
         conn.close()
 
-        # ✅ Generate full signing link
-        base_url = request.host_url.strip('/')  # example: http://localhost:8080 or ngrok domain
-        signing_link = f"{base_url}/sign/{pdf}/{signer_id}"
-        # print(f"✅ Signing link for {name} ({email}): {signing_link}")        
+        # Optionally, log the signer link
+        base_url = request.host_url.strip('/')
+        signing_link = f"{base_url}/sign/{pdf_filename}/{signer_id}"
+        logger.info(f"✅ Signing link for {name} ({email}): {signing_link}")
 
-        return '', 204
+        return '', 204  # Silent success for JS frontend
 
+    # 🔁 GET: Show signer management page
     conn = sqlite3.connect('signers.db')
     c = conn.cursor()
-    c.execute('SELECT id, name, email FROM signers WHERE pdf_filename = ?', (pdf,))
+    c.execute('SELECT id, name, email FROM signers WHERE pdf_filename = ?', (pdf_filename,))
     signers = c.fetchall()
     conn.close()
 
-    # 🔁 Add signing link for each signer
+    # Generate signing links for each signer
     base_url = request.host_url.strip('/')
     signers_with_links = [
         {
             'id': row[0],
             'name': row[1],
             'email': row[2],
-            'link': f"{base_url}/sign/{pdf}/{row[0]}"
+            'link': f"{base_url}/sign/{pdf_filename}/{row[0]}"
         }
         for row in signers
-    ]    
+    ]
 
-    return render_template('click_to_place.html', pdf=pdf, signers=signers)
+    # 🖼 Ensure preview exists
+    if not os.path.exists(preview_path):
+        try:
+            POPPLER_PATH = '/usr/bin'
+            images = convert_from_path(pdf_path, first_page=1, last_page=1, poppler_path=POPPLER_PATH)
+            images[0].save(preview_path, 'JPEG')
+            logger.info(f"Preview generated at {preview_path}")
+        except Exception as e:
+            logger.error(f"Error generating preview image: {e}")
+            return f"❌ Error generating preview: {e}"
+
+    return render_template('click_to_place.html', pdf=pdf_filename, signers=signers_with_links)
+
 
 
 @app.route('/sign/<pdf>/<signer_id>', methods=['GET', 'POST'])
 def sign_document(pdf, signer_id):
-    # Fetch signer info (x, y, has_signed) using both PDF and signer_id
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # Fetch signer info
     conn = sqlite3.connect('signers.db')
     c = conn.cursor()
     c.execute('SELECT x, y, has_signed FROM signers WHERE id=? AND pdf_filename=?', (signer_id, pdf))
@@ -152,7 +191,22 @@ def sign_document(pdf, signer_id):
     if row_has_signed:
         return '✅ You have already signed this document.', 400
 
+    # Reconstruct preview image path
     preview_name = os.path.splitext(pdf)[0] + '_preview.jpg'
+    preview_path = os.path.join('static', preview_name)
+
+    # Fallback: regenerate preview if it doesn’t exist
+    if not os.path.exists(preview_path):
+        try:
+            logger.warning(f"Preview image not found at {preview_path}. Regenerating from PDF.")
+            pdf_path = os.path.join(app.config['PDF_UPLOAD_FOLDER'], pdf)
+            POPPLER_PATH = '/usr/bin'  # Adjust if needed
+            images = convert_from_path(pdf_path, first_page=1, last_page=1, poppler_path=POPPLER_PATH)
+            images[0].save(preview_path, 'JPEG')
+            logger.info(f"Preview regenerated at {preview_path}.")
+        except Exception as e:
+            logger.error(f"Error regenerating preview image: {e}")
+            return f"❌ Failed to generate preview image: {e}", 500
 
     if request.method == 'POST':
         if 'signature' not in request.files or request.files['signature'].filename == '':
@@ -168,14 +222,13 @@ def sign_document(pdf, signer_id):
 
         # Resize signature
         with Image.open(signature_path) as img:
-            target_width = xdim  # you should define xdim globally
+            target_width = xdim  # Make sure xdim is defined globally
             w_percent = target_width / float(img.size[0])
             target_height = int(float(img.size[1]) * w_percent)
-
             resized = img.resize((target_width, target_height), Image.LANCZOS)
             resized.save(signature_path)
 
-        # Update DB
+        # Update database
         conn = sqlite3.connect('signers.db')
         c = conn.cursor()
         c.execute('UPDATE signers SET signature_path=?, has_signed=1 WHERE id=? AND pdf_filename=?',
@@ -183,7 +236,7 @@ def sign_document(pdf, signer_id):
         conn.commit()
         conn.close()
 
-        # Merge single signature into a new PDF
+        # Merge into a signed PDF
         signer_data = {
             "x": x_raw,
             "y": y_raw,
@@ -193,7 +246,6 @@ def sign_document(pdf, signer_id):
         output_filename = merge_signatures_into_pdf(pdf, signers=[signer_data])
         download_url = url_for('download_file', filename=output_filename)
 
-        # Show success + trigger download
         return render_template('merge_success.html', download_url=download_url)
 
     # GET request
