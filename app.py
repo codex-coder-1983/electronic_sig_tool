@@ -409,12 +409,26 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
     page_width, page_height = page.rect.width, page.rect.height
     logger.info(f"Page size: width={page_width}, height={page_height}")
 
-    img_preview_name = pdf_path.replace(".pdf", "_preview.png")
+    # Determine preview image path
     img_preview_name = os.path.basename(base_pdf_path).replace(".pdf", "_preview.png")
-    upload_dir = os.path.dirname(base_pdf_path)    
+    upload_dir = os.path.dirname(base_pdf_path)
     img_preview_path = os.path.join(upload_dir, img_preview_name)
+
+    # ✅ Regenerate preview image if missing
+    if not os.path.exists(img_preview_path):
+        logger.warning(f"⚠️ Preview image not found. Attempting to regenerate: {img_preview_path}")
+        try:
+            from pdf2image import convert_from_path
+            POPPLER_PATH = '/usr/bin'  # Adjust if needed
+            images = convert_from_path(base_pdf_path, first_page=1, last_page=1, poppler_path=POPPLER_PATH)
+            images[0].save(img_preview_path, 'PNG')
+            logger.info(f"✅ Preview image regenerated: {img_preview_path}")
+        except Exception as e:
+            logger.error(f"❌ Failed to regenerate preview image: {e}")
+            raise FileNotFoundError(f"Could not regenerate preview image: {img_preview_path}")
+
+    # Continue with signature placement
     img = Image.open(img_preview_path)
-    
     img_width, img_height = img.size
     scale_x = page_width / img_width
     scale_y = page_height / img_height
@@ -429,17 +443,18 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
         sig_width_pts = sig_width_px * scale_x
         sig_height_pts = sig_height_px * scale_y
 
+        # Clamp position to avoid overflow
         x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
         y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
 
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
 
-        # Flip signature image vertically
+        # Flip image vertically to ensure upright orientation
         flip_matrix = fitz.Matrix(1, -1).preTranslate(0, -2 * y_pdf - sig_height_pts)
         page.insert_image(rect, filename=signature_path, matrix=flip_matrix)
         logger.info(f"🖊️ Signature inserted at: {rect}")
 
-        # Insert date
+        # Add date to the right of the signature
         current_date = datetime.now().strftime("%B %d, %Y")
         date_x = x_pdf + sig_width_pts + points_offset
         date_y = y_pdf + sig_height_pts / 2
@@ -447,8 +462,6 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
         date_box_width = 100
         date_box_height = 20
         date_rect = fitz.Rect(date_x, date_y, date_x + date_box_width, date_y + date_box_height)
-
-        logger.info(f"📍 Inserting date at rect: {date_rect}")
 
         page.insert_textbox(
             date_rect,
@@ -458,7 +471,7 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
             color=(0, 0, 0),
             align=0
         )
-        logger.info("📅 Date inserted upright.")
+        logger.info(f"📅 Date inserted at rect: {date_rect}")
 
     os.makedirs(output_folder, exist_ok=True)
     output_filename = os.path.join(output_folder, os.path.basename(base_pdf_path))
