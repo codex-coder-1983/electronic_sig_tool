@@ -395,7 +395,7 @@ def merge_pdf_signatures(pdf, signers, output_folder='signed'):
             color=(0, 0, 0),
             align=0
         )
-        logger.info("📅 Date inserted (rotated 180°).")
+        # logger.info("📅 Date inserted (rotated 180°).")
 
     doc.save(output_path)
     doc.close()
