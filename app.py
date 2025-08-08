@@ -324,7 +324,7 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
 
     logger = logging.getLogger(__name__)
 
-    # Ensure we are using the absolute PDF path
+    # Ensure absolute path to the PDF
     upload_dir = app.config.get('UPLOAD_FOLDER', 'uploads')
     if not os.path.isabs(base_pdf_path):
         base_pdf_path = os.path.join(upload_dir, base_pdf_path)
@@ -335,12 +335,8 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
         logger.error(f"❌ PDF file not found: {base_pdf_path}")
         raise FileNotFoundError(f"PDF not found: {base_pdf_path}")
 
-    # Open the PDF
+    # Open PDF
     doc = fitz.open(base_pdf_path)
-    page = doc[0]  # Assuming single-page for now
-
-    page_width, page_height = page.rect.width, page.rect.height
-    logger.info(f"📏 Page size: width={page_width}, height={page_height}")
 
     # Determine preview image path
     img_preview_name = os.path.basename(base_pdf_path).replace(".pdf", "_preview.png")
@@ -359,34 +355,23 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
             logger.error(f"❌ Failed to regenerate preview image: {e}")
             raise FileNotFoundError(f"Could not regenerate preview image: {img_preview_path}")
 
-    # Load preview to determine scaling
+    # Load preview to get scaling reference
     img = Image.open(img_preview_path)
     img_width, img_height = img.size
-    scale_x = page_width / img_width
-    scale_y = page_height / img_height
     points_offset = 5
 
-    # Place each signature and date
+    # Loop through all signers
     for signer in signers:
-        # Support both tuple and dict formats
-        if isinstance(signer, dict):
-            x_raw, y_raw, signature_path = signer["x"], signer["y"], signer["signature_path"]
-        else:
-            x_raw, y_raw, signature_path = signer
+        page_number = signer['page']
+        x = signer['x']
+        y = signer['y']
+        sig_path = signer['signature_path']
+        sig_width = signer['sig_width']
+        sig_height = signer['sig_height']
 
-        x_pdf = float(x_raw) * scale_x
-        y_pdf = (img_height - float(y_raw)) * scale_y
-
-        sig_img = Image.open(signature_path)
-        sig_width_px, sig_height_px = sig_img.size
-        sig_width_pts = sig_width_px * scale_x
-        sig_height_pts = sig_height_px * scale_y
-
-        # Clamp position to page boundaries
-        x_pdf = max(0, min(x_pdf - sig_width_pts / 2, page_width - sig_width_pts))
-        y_pdf = max(0, min(y_pdf - sig_height_pts / 2, page_height - sig_height_pts))
-
-        rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
+        page = doc[page_number]
+        page_width = page.rect.width
+        page_height = page.rect.height
 
         # Convert pixel coords to PDF points
         x_pdf = x * page_width / img_width
@@ -396,17 +381,17 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
         sig_width_pts = sig_width * page_width / img_width
         sig_height_pts = sig_height * page_height / img_height
 
-        # Place signature directly in PDF coordinates
+        # Place signature
         sig_rect = fitz.Rect(
-            x_pdf, 
-            y_pdf - sig_height_pts, 
-            x_pdf + sig_width_pts, 
+            x_pdf,
+            y_pdf - sig_height_pts,
+            x_pdf + sig_width_pts,
             y_pdf
         )
         page.insert_image(sig_rect, filename=sig_path)
-        logger.info(f"🖊️ Signature inserted at: {rect}")
+        logger.info(f"🖊️ Signature inserted at: {sig_rect}")
 
-        # Add date to the right of the signature
+        # Add date to the right of signature
         current_date = datetime.now().strftime("%B %d, %Y")
         date_x = x_pdf + sig_width_pts + points_offset
         date_y = y_pdf + sig_height_pts / 2
@@ -425,7 +410,7 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
         )
         logger.info(f"📅 Date inserted at rect: {date_rect}")
 
-    # Save signed PDF
+    # Save final signed PDF
     os.makedirs(output_folder, exist_ok=True)
     output_filename = os.path.join(output_folder, os.path.basename(base_pdf_path))
     doc.save(output_filename)
@@ -433,7 +418,6 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
     logger.info(f"✅ Final signed PDF saved to: {output_filename}")
 
     return output_filename
-
 
 
 @app.route('/download/<filename>')
