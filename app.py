@@ -171,93 +171,65 @@ def set_signature_positions(pdf):
 
 
 
-@app.route('/sign/<pdf>/<signer_id>', methods=['GET', 'POST'])
-def sign_document(pdf, signer_id):
-    import logging
-    logger = logging.getLogger(__name__)
+@app.route('/sign_document/<signer_name>', methods=['POST'])
+def sign_document(signer_name):
+    try:
+        # Get raw coordinates from the form
+        x_raw = float(request.form['x'])
+        y_raw = float(request.form['y'])
 
-    # Fetch signer info
-    conn = sqlite3.connect('signers.db')
-    c = conn.cursor()
-    c.execute('SELECT x, y, has_signed FROM signers WHERE id=? AND pdf_filename=?', (signer_id, pdf))
-    row = c.fetchone()
-    conn.close()
-
-    if not row:
-        return '❌ Signer not found', 404
-
-    x_raw, y_raw, row_has_signed = row
-
-    if row_has_signed:
-        return '✅ You have already signed this document.', 400
-
-    # Reconstruct preview image path
-    preview_name = os.path.splitext(pdf)[0] + '_preview.jpg'
-    preview_path = os.path.join('static', preview_name)
-
-    # Fallback: regenerate preview if it doesn’t exist
-    if not os.path.exists(preview_path):
-        try:
-            logger.warning(f"Preview image not found at {preview_path}. Regenerating from PDF.")
-            pdf_path = os.path.join(app.config['PDF_UPLOAD_FOLDER'], pdf)
-            POPPLER_PATH = '/usr/bin'  # Adjust if needed
-            images = convert_from_path(pdf_path, first_page=1, last_page=1, poppler_path=POPPLER_PATH)
-            images[0].save(preview_path, 'JPEG')
-            logger.info(f"Preview regenerated at {preview_path}.")
-        except Exception as e:
-            logger.error(f"Error regenerating preview image: {e}")
-            return f"❌ Failed to generate preview image: {e}", 500
-
-    if request.method == 'POST':
-        if 'signature' not in request.files or request.files['signature'].filename == '':
-            return '❌ No signature file uploaded', 400
-
+        # Get uploaded signature file
         file = request.files['signature']
-        base_name = os.path.splitext(pdf)[0]
-        filename = f"{base_name}_signer{signer_id}.png"
-        signature_path = os.path.join('static/signatures', filename)
+        if not file:
+            return jsonify({"error": "No signature uploaded"}), 400
 
-        # Save uploaded signature
+        # Save signature temporarily
+        signature_path = os.path.join('temp_signatures', f"{signer_name}.png")
+        os.makedirs('temp_signatures', exist_ok=True)
         file.save(signature_path)
 
-        # Resize signature
+        # Resize signature to a consistent width in preview pixels (optional)
+        target_width_px = 200  # adjust if you want bigger/smaller signature
         with Image.open(signature_path) as img:
-            target_width = xdim  # Make sure xdim is defined globally
-            w_percent = target_width / float(img.size[0])
-            target_height = int(float(img.size[1]) * w_percent)
-            resized = img.resize((target_width, target_height), Image.LANCZOS)
+            w_percent = target_width_px / float(img.size[0])
+            target_height_px = int(float(img.size[1]) * w_percent)
+            resized = img.resize((target_width_px, target_height_px), Image.LANCZOS)
             resized.save(signature_path)
+            sig_width = target_width_px
+            sig_height = target_height_px
 
-        # Update database
-        conn = sqlite3.connect('signers.db')
-        c = conn.cursor()
-        c.execute('UPDATE signers SET signature_path=?, has_signed=1 WHERE id=? AND pdf_filename=?',
-                  (signature_path, signer_id, pdf))
-        conn.commit()
-        conn.close()
+        # Get PDF preview image dimensions for scaling
+        # Assumes preview image is stored in static folder with fixed name
+        preview_image_full_path = os.path.join('static', f"preview_{signer_name}.png")
+        if not os.path.exists(preview_image_full_path):
+            return jsonify({"error": "Preview image not found"}), 404
 
-        # Merge into a signed PDF
+        with Image.open(preview_image_full_path) as preview_img:
+            img_width, img_height = preview_img.size
+
+        # Prepare signer_data dict for merge_pdf_signatures()
         signer_data = {
             "x": x_raw,
             "y": y_raw,
-            "signature_path": signature_path
+            "signature_path": signature_path,
+            "page": 0,  # 0-based page index, assuming always first page for now
+            "sig_width": sig_width,
+            "sig_height": sig_height,
+            "img_width": img_width,
+            "img_height": img_height
         }
 
-        output_filename = merge_pdf_signatures(pdf, signers=[signer_data])
-        download_url = url_for('download_file', filename=output_filename)
+        # Merge into final signed PDF
+        original_pdf_path = os.path.join('uploads', 'document.pdf')  # adjust if dynamic
+        output_pdf_path = os.path.join('signed', f"{signer_name}_signed.pdf")
+        os.makedirs('signed', exist_ok=True)
 
-        return render_template('merge_success.html', download_url=download_url)
+        merge_pdf_signatures(original_pdf_path, [signer_data], output_pdf_path)
 
-    # GET request
-    return render_template(
-        'sign.html',
-        signer_id=signer_id,
-        x=float(x_raw),
-        y=float(y_raw),
-        preview_image=preview_name,
-        message='',
-        download_url=None
-    )
+        return jsonify({"message": "Signature added successfully", "signed_pdf": output_pdf_path})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/merge/<pdf_filename>', methods=['POST'])
