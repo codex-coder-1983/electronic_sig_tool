@@ -192,6 +192,11 @@ def set_signature_positions(pdf):
         conn.commit()
         conn.close()
 
+        # ✅ Generate signer link based on current domain
+        base_url = request.url_root.rstrip("/")
+        signing_link = f"{base_url}sign/{pdf_filename}/{signer_id}"
+        print(f"Signer link: {signing_link}")  # Appears in Render logs        
+
         # Optionally, log the signer link
         base_url = request.host_url.strip('/')
         signing_link = f"{base_url}/sign/{pdf_filename}/{signer_id}"
