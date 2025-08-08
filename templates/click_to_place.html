@@ -167,8 +167,8 @@
                             <td>${signer.name}</td>
                             <td>${signer.email}</td>
                             <td>
-                                <a href="/sign/${currentPdf}/${signer.id}" target="_blank">/sign/${currentPdf}/${signer.id}</a>
-                                <button onclick="copyLink(this)" data-link="/sign/${currentPdf}/${signer.id}">📋 Copy</button>
+                                <a href="/sign_document/${encodeURIComponent(signer.name)}" target="_blank">/sign_document/${signer.name}</a>
+                                <button onclick="copyLink(this)" data-link="/sign_document/${encodeURIComponent(signer.name)}">📋 Copy</button>
                             </td>
                             <td><button onclick="deleteSigner('${signer.id}')">❌ Delete</button></td>
                         `;
