@@ -388,9 +388,22 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
 
         rect = fitz.Rect(x_pdf, y_pdf, x_pdf + sig_width_pts, y_pdf + sig_height_pts)
 
-        # Flip vertically so signature is upright
-        flip_matrix = fitz.Matrix(1, -1).translate(0, -2 * y_pdf - sig_height_pts)
-        page.insert_image(rect, filename=signature_path, matrix=flip_matrix)
+        # Convert pixel coords to PDF points
+        x_pdf = x * page_width / img_width
+        y_pdf = y * page_height / img_height
+
+        # Signature size in PDF points
+        sig_width_pts = sig_width * page_width / img_width
+        sig_height_pts = sig_height * page_height / img_height
+
+        # Place signature directly in PDF coordinates
+        sig_rect = fitz.Rect(
+            x_pdf, 
+            y_pdf - sig_height_pts, 
+            x_pdf + sig_width_pts, 
+            y_pdf
+        )
+        page.insert_image(sig_rect, filename=sig_path)
         logger.info(f"🖊️ Signature inserted at: {rect}")
 
         # Add date to the right of the signature
