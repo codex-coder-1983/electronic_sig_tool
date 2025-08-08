@@ -475,6 +475,13 @@ def init_db():
 with app.test_request_context():
     for rule in app.url_map.iter_rules():
         print(rule, "->", "methods:", ",".join(rule.methods))
+
+# temporary route
+@app.errorhandler(404)
+def page_not_found(e):
+    app.logger.warning(f"404: {request.method} {request.path}")
+    return "Not Found", 404
+        
         
 from pyngrok import ngrok, conf
 
