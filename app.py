@@ -66,6 +66,54 @@ def show_routes():
         lines.append(f"{r.rule}  ->  methods: {methods}")
     return '<pre>' + '\n'.join(sorted(lines)) + '</pre>'
 
+@app.route('/sign_document/<signer_name>', methods=['GET', 'POST'])
+def sign_document(signer_name):
+    import os
+    import logging
+    from flask import request, render_template, redirect, url_for, flash
+
+    logging.info(f"Accessing sign_document for signer: {signer_name}")
+
+    # Normalize the signer name to lowercase for matching
+    signer_name = signer_name.lower()
+
+    # Look for the signer in the database
+    signer = query_db("SELECT * FROM signers WHERE LOWER(name) = ?", (signer_name,), one=True)
+    if not signer:
+        logging.warning(f"Signer '{signer_name}' not found in DB")
+        return "Invalid signer link", 404
+
+    # If form is submitted (POST)
+    if request.method == 'POST':
+        sig_file = request.files.get('signature')
+        if not sig_file:
+            flash("Please upload a signature image.")
+            return redirect(request.url)
+
+        # Save signature image
+        upload_folder = 'uploads/signatures'
+        os.makedirs(upload_folder, exist_ok=True)
+        sig_path = os.path.join(upload_folder, f"{signer_name}_signature.png")
+        sig_file.save(sig_path)
+
+        # Prepare data for PDF merge
+        signer_data = {
+            "name": signer_name,
+            "page": signer['page'],  # pulled from DB
+            "x": signer['x'],        # pulled from DB
+            "y": signer['y'],        # pulled from DB
+            "signature_path": sig_path
+        }
+
+        pdf_path = signer['pdf_path']
+        output_filename = merge_pdf_signatures(pdf_path, signers=[signer_data])
+
+        logging.info(f"Signature merged successfully for {signer_name} into {output_filename}")
+
+        return render_template('merge_success.html', output_file=output_filename)
+
+    # If GET request, show upload form
+    return render_template('sign_document.html', signer=signer)
 
 # Home
 @app.route('/')
@@ -182,57 +230,6 @@ def set_signature_positions(pdf):
             return f"❌ Error generating preview: {e}"
 
     return render_template('click_to_place.html', pdf=pdf_filename, signers=signers_with_links)
-
-
-
-@app.route('/sign_document/<signer_name>', methods=['GET', 'POST'])
-def sign_document(signer_name):
-    import os
-    import logging
-    from flask import request, render_template, redirect, url_for, flash
-
-    logging.info(f"Accessing sign_document for signer: {signer_name}")
-
-    # Normalize the signer name to lowercase for matching
-    signer_name = signer_name.lower()
-
-    # Look for the signer in the database
-    signer = query_db("SELECT * FROM signers WHERE LOWER(name) = ?", (signer_name,), one=True)
-    if not signer:
-        logging.warning(f"Signer '{signer_name}' not found in DB")
-        return "Invalid signer link", 404
-
-    # If form is submitted (POST)
-    if request.method == 'POST':
-        sig_file = request.files.get('signature')
-        if not sig_file:
-            flash("Please upload a signature image.")
-            return redirect(request.url)
-
-        # Save signature image
-        upload_folder = 'uploads/signatures'
-        os.makedirs(upload_folder, exist_ok=True)
-        sig_path = os.path.join(upload_folder, f"{signer_name}_signature.png")
-        sig_file.save(sig_path)
-
-        # Prepare data for PDF merge
-        signer_data = {
-            "name": signer_name,
-            "page": signer['page'],  # pulled from DB
-            "x": signer['x'],        # pulled from DB
-            "y": signer['y'],        # pulled from DB
-            "signature_path": sig_path
-        }
-
-        pdf_path = signer['pdf_path']
-        output_filename = merge_pdf_signatures(pdf_path, signers=[signer_data])
-
-        logging.info(f"Signature merged successfully for {signer_name} into {output_filename}")
-
-        return render_template('merge_success.html', output_file=output_filename)
-
-    # If GET request, show upload form
-    return render_template('sign_document.html', signer=signer)
 
 
 
@@ -475,7 +472,10 @@ def init_db():
     conn.commit()
     conn.close()
 
-
+with app.test_request_context():
+    for rule in app.url_map.iter_rules():
+        print(rule, "->", "methods:", ",".join(rule.methods))
+        
 from pyngrok import ngrok, conf
 
 if __name__ == '__main__':
