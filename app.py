@@ -71,6 +71,7 @@ def sign_document(signer_name):
     import os
     import logging
     from flask import request, render_template, redirect, url_for, flash
+    import sqlite3
 
     logging.info(f"Accessing sign_document for signer: {signer_name}")
 
@@ -78,7 +79,13 @@ def sign_document(signer_name):
     signer_name = signer_name.lower()
 
     # Look for the signer in the database
-    signer = query_db("SELECT * FROM signers WHERE LOWER(name) = ?", (signer_name,), one=True)
+    conn = sqlite3.connect('signers.db')
+    conn.row_factory = sqlite3.Row  # so you can access columns by name
+    c = conn.cursor()
+    c.execute("SELECT * FROM signers WHERE LOWER(name) = ?", (signer_name,))
+    signer = c.fetchone()
+    conn.close()
+
     if not signer:
         logging.warning(f"Signer '{signer_name}' not found in DB")
         return "Invalid signer link", 404
