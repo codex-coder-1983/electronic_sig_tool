@@ -171,65 +171,55 @@ def set_signature_positions(pdf):
 
 
 
-@app.route('/sign_document/<signer_name>', methods=['POST'])
+@app.route('/sign_document/<signer_name>', methods=['GET', 'POST'])
 def sign_document(signer_name):
-    try:
-        # Get raw coordinates from the form
-        x_raw = float(request.form['x'])
-        y_raw = float(request.form['y'])
+    import os
+    import logging
+    from flask import request, render_template, redirect, url_for, flash
 
-        # Get uploaded signature file
-        file = request.files['signature']
-        if not file:
-            return jsonify({"error": "No signature uploaded"}), 400
+    logging.info(f"Accessing sign_document for signer: {signer_name}")
 
-        # Save signature temporarily
-        signature_path = os.path.join('temp_signatures', f"{signer_name}.png")
-        os.makedirs('temp_signatures', exist_ok=True)
-        file.save(signature_path)
+    # Normalize the signer name to lowercase for matching
+    signer_name = signer_name.lower()
 
-        # Resize signature to a consistent width in preview pixels (optional)
-        target_width_px = 200  # adjust if you want bigger/smaller signature
-        with Image.open(signature_path) as img:
-            w_percent = target_width_px / float(img.size[0])
-            target_height_px = int(float(img.size[1]) * w_percent)
-            resized = img.resize((target_width_px, target_height_px), Image.LANCZOS)
-            resized.save(signature_path)
-            sig_width = target_width_px
-            sig_height = target_height_px
+    # Look for the signer in the database
+    signer = query_db("SELECT * FROM signers WHERE LOWER(name) = ?", (signer_name,), one=True)
+    if not signer:
+        logging.warning(f"Signer '{signer_name}' not found in DB")
+        return "Invalid signer link", 404
 
-        # Get PDF preview image dimensions for scaling
-        # Assumes preview image is stored in static folder with fixed name
-        preview_image_full_path = os.path.join('static', f"preview_{signer_name}.png")
-        if not os.path.exists(preview_image_full_path):
-            return jsonify({"error": "Preview image not found"}), 404
+    # If form is submitted (POST)
+    if request.method == 'POST':
+        sig_file = request.files.get('signature')
+        if not sig_file:
+            flash("Please upload a signature image.")
+            return redirect(request.url)
 
-        with Image.open(preview_image_full_path) as preview_img:
-            img_width, img_height = preview_img.size
+        # Save signature image
+        upload_folder = 'uploads/signatures'
+        os.makedirs(upload_folder, exist_ok=True)
+        sig_path = os.path.join(upload_folder, f"{signer_name}_signature.png")
+        sig_file.save(sig_path)
 
-        # Prepare signer_data dict for merge_pdf_signatures()
+        # Prepare data for PDF merge
         signer_data = {
-            "x": x_raw,
-            "y": y_raw,
-            "signature_path": signature_path,
-            "page": 0,  # 0-based page index, assuming always first page for now
-            "sig_width": sig_width,
-            "sig_height": sig_height,
-            "img_width": img_width,
-            "img_height": img_height
+            "name": signer_name,
+            "page": signer['page'],  # pulled from DB
+            "x": signer['x'],        # pulled from DB
+            "y": signer['y'],        # pulled from DB
+            "signature_path": sig_path
         }
 
-        # Merge into final signed PDF
-        original_pdf_path = os.path.join('uploads', 'document.pdf')  # adjust if dynamic
-        output_pdf_path = os.path.join('signed', f"{signer_name}_signed.pdf")
-        os.makedirs('signed', exist_ok=True)
+        pdf_path = signer['pdf_path']
+        output_filename = merge_pdf_signatures(pdf_path, signers=[signer_data])
 
-        merge_pdf_signatures(original_pdf_path, [signer_data], output_pdf_path)
+        logging.info(f"Signature merged successfully for {signer_name} into {output_filename}")
 
-        return jsonify({"message": "Signature added successfully", "signed_pdf": output_pdf_path})
+        return render_template('merge_success.html', output_file=output_filename)
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # If GET request, show upload form
+    return render_template('sign_document.html', signer=signer)
+
 
 
 @app.route('/merge/<pdf_filename>', methods=['POST'])
