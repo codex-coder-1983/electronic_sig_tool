@@ -192,38 +192,35 @@ def set_signature_positions(pdf):
         conn.commit()
         conn.close()
 
-        # ✅ Generate signer link based on current domain
-        base_url = request.url_root.rstrip("/")
-        signing_link = f"{base_url}sign/{pdf_filename}/{signer_id}"
-        print(f"Signer link: {signing_link}")  # Appears in Render logs        
-
-        # Optionally, log the signer link
-        base_url = request.host_url.strip('/')
-        signing_link = f"{base_url}/sign/{pdf_filename}/{signer_id}"
+        # Generate signer link with correct route and normalized name
+        base_url = request.host_url.rstrip('/')
+        signer_name_for_url = name.lower().replace(' ', '_')
+        signing_link = f"{base_url}/sign_document/{signer_name_for_url}"
         logger.info(f"✅ Signing link for {name} ({email}): {signing_link}")
+
+        print(f"Signer link: {signing_link}")  # For logs
 
         return '', 204  # Silent success for JS frontend
 
-    # 🔁 GET: Show signer management page
+    # GET: Show signer management page
     conn = sqlite3.connect('signers.db')
     c = conn.cursor()
     c.execute('SELECT id, name, email FROM signers WHERE pdf_filename = ?', (pdf_filename,))
     signers = c.fetchall()
     conn.close()
 
-    # Generate signing links for each signer
-    base_url = request.host_url.strip('/')
+    base_url = request.host_url.rstrip('/')
     signers_with_links = [
         {
             'id': row[0],
             'name': row[1],
             'email': row[2],
-            'link': f"{base_url}/sign/{pdf_filename}/{row[0]}"
+            'link': f"{base_url}/sign_document/{row[1].lower().replace(' ', '_')}"
         }
         for row in signers
     ]
 
-    # 🖼 Ensure preview exists
+    # Ensure preview image exists
     if not os.path.exists(preview_path):
         try:
             POPPLER_PATH = '/usr/bin'
@@ -235,7 +232,6 @@ def set_signature_positions(pdf):
             return f"❌ Error generating preview: {e}"
 
     return render_template('click_to_place.html', pdf=pdf_filename, signers=signers_with_links)
-
 
 
 @app.route('/merge/<pdf_filename>', methods=['POST'])
