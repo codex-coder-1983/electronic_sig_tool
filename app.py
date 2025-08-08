@@ -29,6 +29,10 @@ load_dotenv()  # Loads variables from .env file
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
 
+@app.before_request
+def log_incoming():
+    app.logger.info(f"Incoming request: {request.method} {request.path}")
+
 xdim = 170
 points_offset = 40
 size_date_font = 10
@@ -52,6 +56,16 @@ os.makedirs(app.config['SIGNATURE_UPLOAD_FOLDER'], exist_ok=True)
 
 os.makedirs('static', exist_ok=True)
 os.makedirs('signed', exist_ok=True)
+
+# temporary route
+@app.route('/__routes__')
+def show_routes():
+    lines = []
+    for r in app.url_map.iter_rules():
+        methods = ','.join(sorted(r.methods - {'HEAD', 'OPTIONS'}))
+        lines.append(f"{r.rule}  ->  methods: {methods}")
+    return '<pre>' + '\n'.join(sorted(lines)) + '</pre>'
+
 
 # Home
 @app.route('/')
