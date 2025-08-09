@@ -107,13 +107,13 @@ def sign_document(signer_name):
         sig_file.save(sig_path)
 
         # Prepare signer_data for merging (ensure numeric types if available)
-        signer_page = int(signer['page']) if signer['page'] is not None else 0
+        page_val = int(signer['page']) if signer['page'] is not None else 0
         signer_x = float(signer['x']) if signer['x'] is not None else 0.0
         signer_y = float(signer['y']) if signer['y'] is not None else 0.0
 
         signer_data = {
             "name": signer_name,
-            "page": signer_page,
+            "page": page_val,
             "x": signer_x,
             "y": signer_y,
             "signature_path": sig_path
@@ -143,7 +143,7 @@ def sign_document(signer_name):
     # x/y/page: provide numbers or None
     x_val = int(signer['x']) if signer['x'] is not None else None
     y_val = int(signer['y']) if signer['y'] is not None else None
-    page_val = int(signer['page']) if signer['page'] is not None else None
+    page_val = int(signer['page']) if signer['page'] is not None else 0
 
     # Determine preview image filename to pass to template
     pdf_filename = None
