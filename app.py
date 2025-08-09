@@ -67,66 +67,61 @@ def show_routes():
     return '<pre>' + '\n'.join(sorted(lines)) + '</pre>'
 
 
-@@app.route('/sign_document/<signer_name>', methods=['GET', 'POST'])
+@app.route('/sign_document/<signer_name>', methods=['GET', 'POST'])
 def sign_document(signer_name):
-    import sqlite3
-    import logging
     import os
+    import logging
+    from flask import request, render_template, redirect, url_for, flash
+    import sqlite3
 
-    logging.basicConfig(level=logging.DEBUG)
+    logging.info(f"Accessing sign_document for signer: {signer_name}")
 
-    # Connect to database and get signer info
+    # Normalize the signer name to lowercase for matching
+    signer_name = signer_name.lower()
+
+    # Look for the signer in the database
     conn = sqlite3.connect('signers.db')
-    conn.row_factory = sqlite3.Row
+    conn.row_factory = sqlite3.Row  # so you can access columns by name
     c = conn.cursor()
-    c.execute("SELECT * FROM signers WHERE LOWER(name) = ?", (signer_name.lower(),))
+    c.execute("SELECT * FROM signers WHERE LOWER(name) = ?", (signer_name,))
     signer = c.fetchone()
     conn.close()
 
     if not signer:
-        logging.error(f"Signer not found: {signer_name}")
-        return f"Signer '{signer_name}' not found", 404
+        logging.warning(f"Signer '{signer_name}' not found in DB")
+        return "Invalid signer link", 404
 
-    # Get PDF path from signer record
-    pdf_path = signer["pdf_path"]
-    if not pdf_path or not os.path.exists(pdf_path):
-        logging.error(f"PDF file not found for signer '{signer_name}': {pdf_path}")
-        return "PDF file not found", 404
-
-    # Handle POST: save uploaded signature image
+    # If form is submitted (POST)
     if request.method == 'POST':
-        if 'signature' not in request.files:
-            logging.error("No signature file uploaded")
-            return "No signature uploaded", 400
+        sig_file = request.files.get('signature')
+        if not sig_file:
+            flash("Please upload a signature image.")
+            return redirect(request.url)
 
-        file = request.files['signature']
-        if file.filename == '':
-            logging.error("Empty filename for signature")
-            return "No selected file", 400
-
-        # Save signature to uploads folder
-        upload_folder = os.path.join('uploads', signer_name)
+        # Save signature image
+        upload_folder = 'uploads/signatures'
         os.makedirs(upload_folder, exist_ok=True)
-        sig_path = os.path.join(upload_folder, file.filename)
-        file.save(sig_path)
-        logging.info(f"Signature saved: {sig_path}")
+        sig_path = os.path.join(upload_folder, f"{signer_name}_signature.png")
+        sig_file.save(sig_path)
 
-        # Update DB with signature path
-        conn = sqlite3.connect('signers.db')
-        c = conn.cursor()
-        c.execute("UPDATE signers SET signature_path = ? WHERE LOWER(name) = ?", (sig_path, signer_name.lower()))
-        conn.commit()
-        conn.close()
+        # Prepare data for PDF merge
+        signer_data = {
+            "name": signer_name,
+            "page": signer['page'],  # pulled from DB
+            "x": signer['x'],        # pulled from DB
+            "y": signer['y'],        # pulled from DB
+            "signature_path": sig_path
+        }
 
-        return redirect(url_for('merge_signatures', pdf_filename=os.path.basename(pdf_path)))
+        pdf_path = signer['pdf_path']
+        output_filename = merge_pdf_signatures(pdf_path, signers=[signer_data])
 
-    # Handle GET: show sign.html with PDF preview
-    return render_template(
-        'sign.html',
-        signer_name=signer_name,
-        pdf_filename=os.path.basename(pdf_path)
-    )
+        logging.info(f"Signature merged successfully for {signer_name} into {output_filename}")
 
+        return render_template('merge_success.html', output_file=output_filename)
+
+    # If GET request, show upload form
+    return render_template('sign.html', signer=signer)
 
 # Home
 @app.route('/')
