@@ -71,17 +71,17 @@ def show_routes():
 def sign_document(signer_name):
     import os
     import logging
-    from flask import request, render_template, redirect, url_for, flash
     import sqlite3
+    from flask import request, render_template, redirect, url_for, flash
 
     logging.info(f"Accessing sign_document for signer: {signer_name}")
 
-    # Normalize the signer name to lowercase for matching
+    # Normalize the signer name for case-insensitive lookup
     signer_name = signer_name.lower()
 
-    # Look for the signer in the database
+    # DB lookup
     conn = sqlite3.connect('signers.db')
-    conn.row_factory = sqlite3.Row  # so you can access columns by name
+    conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("SELECT * FROM signers WHERE LOWER(name) = ?", (signer_name,))
     signer = c.fetchone()
@@ -91,7 +91,7 @@ def sign_document(signer_name):
         logging.warning(f"Signer '{signer_name}' not found in DB")
         return "Invalid signer link", 404
 
-    # If form is submitted (POST)
+    # POST: handle uploaded signature exactly as before but with safer pdf path resolution
     if request.method == 'POST':
         sig_file = request.files.get('signature')
         if not sig_file:
@@ -101,27 +101,76 @@ def sign_document(signer_name):
         # Save signature image
         upload_folder = 'uploads/signatures'
         os.makedirs(upload_folder, exist_ok=True)
-        sig_path = os.path.join(upload_folder, f"{signer_name}_signature.png")
+        # safe filename (use signer_name normalized)
+        sig_basename = f"{signer_name}_signature.png"
+        sig_path = os.path.join(upload_folder, sig_basename)
         sig_file.save(sig_path)
 
-        # Prepare data for PDF merge
+        # Prepare signer_data for merging (ensure numeric types if available)
+        signer_page = int(signer['page']) if signer['page'] is not None else 0
+        signer_x = float(signer['x']) if signer['x'] is not None else 0.0
+        signer_y = float(signer['y']) if signer['y'] is not None else 0.0
+
         signer_data = {
             "name": signer_name,
-            "page": signer['page'],  # pulled from DB
-            "x": signer['x'],        # pulled from DB
-            "y": signer['y'],        # pulled from DB
+            "page": signer_page,
+            "x": signer_x,
+            "y": signer_y,
             "signature_path": sig_path
         }
 
-        pdf_path = signer['pdf_path']
-        output_filename = merge_pdf_signatures(pdf_path, signers=[signer_data])
+        # Resolve pdf_path: use pdf_path if present, otherwise pdf_filename (basename)
+        if 'pdf_path' in signer.keys() and signer['pdf_path']:
+            pdf_path = signer['pdf_path']
+        elif 'pdf_filename' in signer.keys() and signer['pdf_filename']:
+            pdf_path = signer['pdf_filename']
+        else:
+            logging.error("PDF information missing for signer in DB.")
+            flash("Server error: PDF not found for this signer.")
+            return redirect(request.url)
+
+        try:
+            output_filename = merge_pdf_signatures(pdf_path, signers=[signer_data])
+        except Exception as e:
+            logging.exception("Error while merging signature into PDF")
+            flash("An error occurred while processing your signature. Please try again.")
+            return redirect(request.url)
 
         logging.info(f"Signature merged successfully for {signer_name} into {output_filename}")
-
         return render_template('merge_success.html', output_file=output_filename)
 
-    # If GET request, show upload form
-    return render_template('sign.html', signer=signer)
+    # GET: prepare values for sign.html so template has x, y and preview_image (no Undefined)
+    # x/y/page: provide numbers or None
+    x_val = int(signer['x']) if signer['x'] is not None else None
+    y_val = int(signer['y']) if signer['y'] is not None else None
+    page_val = int(signer['page']) if signer['page'] is not None else None
+
+    # Determine preview image filename to pass to template
+    pdf_filename = None
+    if 'pdf_filename' in signer.keys() and signer['pdf_filename']:
+        pdf_filename = signer['pdf_filename']
+    elif 'pdf_path' in signer.keys() and signer['pdf_path']:
+        pdf_filename = os.path.basename(signer['pdf_path'])
+
+    preview_image = None
+    if pdf_filename:
+        preview_name = os.path.splitext(pdf_filename)[0] + '_preview.jpg'
+        preview_full = os.path.join('static', preview_name)
+        if os.path.exists(preview_full):
+            preview_image = preview_name
+        else:
+            logging.warning(f"Preview image not found: {preview_full} -- template will receive preview_image=None")
+
+    # Render template and explicitly pass x, y, preview_image
+    return render_template(
+        'sign.html',
+        signer=signer,
+        x=x_val,
+        y=y_val,
+        page=page_val,
+        preview_image=preview_image
+    )
+
 
 # Home
 @app.route('/')
