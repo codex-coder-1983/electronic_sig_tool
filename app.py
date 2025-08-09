@@ -120,7 +120,7 @@ def sign_document(signer_name):
         return render_template('merge_success.html', output_file=output_filename)
 
     # If GET request, show upload form
-    return render_template('sign_document.html', signer=signer)
+    return render_template('sign.html', signer=signer)
 
 # Home
 @app.route('/')
