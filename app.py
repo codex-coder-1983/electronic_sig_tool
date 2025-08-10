@@ -18,6 +18,9 @@ import time
 import secrets
 from dotenv import load_dotenv
 from pathlib import Path
+import signal
+import subprocess
+from pyngrok import ngrok, conf
 
 ##logging.basicConfig(
 ##    level=logging.INFO,  # or logging.DEBUG for more detail
@@ -555,18 +558,26 @@ def page_not_found(e):
     app.logger.warning(f"404: {request.method} {request.path}")
     return "Not Found", 404
         
-        
-from pyngrok import ngrok, conf
 
 if __name__ == '__main__':
     init_db()
-    
-    # Only run ngrok in local environment
-    if os.environ.get("RENDER") is None:
-        from pyngrok import ngrok, conf
-        conf.get_default().config_path = "C:/Users/cerilo.cabacoy/AppData/Local/ngrok/ngrok.yml"
+
+    USE_NGROK = False  # Change to True if you want ngrok to run
+
+    if USE_NGROK and os.environ.get("RENDER") is None:
+        conf.get_default().config_path = r"C:/Users/cerilo.cabacoy/AppData/Local/ngrok/ngrok.yml"
         public_url = ngrok.connect(10000)
         print(f"🔗 Public URL: {public_url}")
+    else:
+        print("🚫 Ngrok is disabled.")
 
-    app.run(host="0.0.0.0", port=10000, debug=True)
+    try:
+        app.run(host="0.0.0.0", port=10000, debug=True)
+    finally:
+        # Kill any running ngrok process
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "ngrok.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print("✅ Ngrok process terminated.")
+        except Exception as e:
+            print(f"⚠️ Could not terminate ngrok: {e}")
 
