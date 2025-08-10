@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, redirect, url_for, jsonify, send_from_directory, session, flash
+from flask import Flask, request, render_template, redirect, url_for, jsonify, send_from_directory, session, flash, send_file
 from flask_mail import Mail, Message
 from werkzeug.utils import secure_filename
 import os
@@ -72,17 +72,12 @@ def show_routes():
 
 @app.route('/sign_document/<signer_name>', methods=['GET', 'POST'])
 def sign_document(signer_name):
-    import os
-    import logging
-    import sqlite3
-    from flask import request, render_template, redirect, url_for, flash
-
     logging.info(f"Accessing sign_document for signer: {signer_name}")
 
-    # Normalize the signer name for case-insensitive lookup
+    # Normalize for case-insensitive lookup
     signer_name = signer_name.lower()
 
-    # DB lookup
+    # Get signer data from DB
     conn = sqlite3.connect('signers.db')
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
@@ -94,7 +89,6 @@ def sign_document(signer_name):
         logging.warning(f"Signer '{signer_name}' not found in DB")
         return "Invalid signer link", 404
 
-    # POST: handle uploaded signature
     if request.method == 'POST':
         sig_file = request.files.get('signature')
         if not sig_file:
@@ -104,33 +98,23 @@ def sign_document(signer_name):
         # Save signature image
         upload_folder = 'uploads/signatures'
         os.makedirs(upload_folder, exist_ok=True)
-        sig_basename = f"{signer_name}_signature.png"
-        sig_path = os.path.join(upload_folder, sig_basename)
+        sig_path = os.path.join(upload_folder, f"{signer_name}_signature.png")
         sig_file.save(sig_path)
 
-        # Prepare signer_data
-        page_val = int(signer['page']) if signer['page'] is not None else 0
-        signer_x = float(signer['x']) if signer['x'] is not None else 0.0
-        signer_y = float(signer['y']) if signer['y'] is not None else 0.0
-        sig_width_val = float(signer['sig_width']) if signer['sig_width'] is not None else 100.0
-        sig_height_val = float(signer['sig_height']) if signer['sig_height'] is not None else 50.0
-
+        # Extract coordinates & sizes
         signer_data = {
             "name": signer_name,
-            "page": page_val,
-            "x": signer_x,
-            "y": signer_y,
+            "page": int(signer['page'] or 0),
+            "x": float(signer['x'] or 0.0),
+            "y": float(signer['y'] or 0.0),
             "signature_path": sig_path,
-            "sig_width": sig_width_val,
-            "sig_height": sig_height_val
+            "sig_width": float(signer['sig_width'] or 100.0),
+            "sig_height": float(signer['sig_height'] or 50.0)
         }
 
-        # Resolve pdf_path
-        if 'pdf_path' in signer.keys() and signer['pdf_path']:
-            pdf_path = signer['pdf_path']
-        elif 'pdf_filename' in signer.keys() and signer['pdf_filename']:
-            pdf_path = signer['pdf_filename']
-        else:
+        # Get PDF path
+        pdf_path = signer.get('pdf_path') or signer.get('pdf_filename')
+        if not pdf_path:
             logging.error("PDF information missing for signer in DB.")
             flash("Server error: PDF not found for this signer.")
             return redirect(request.url)
@@ -142,7 +126,7 @@ def sign_document(signer_name):
             flash("An error occurred while processing your signature. Please try again.")
             return redirect(request.url)
 
-        # ✅ Update signer status to "signed" after successful merge
+        # Update status
         try:
             conn = sqlite3.connect('signers.db')
             c = conn.cursor()
@@ -152,41 +136,21 @@ def sign_document(signer_name):
             )
             conn.commit()
             conn.close()
-            logging.info(f"Status updated to 'signed' for {signer_name}")
-        except Exception as e:
+        except Exception:
             logging.exception("Failed to update signer status in DB")
 
         logging.info(f"Signature merged successfully for {signer_name} into {output_filename}")
-        return render_template('merge_success.html', output_file=output_filename)
 
-    # GET: prepare values for sign.html
-    x_val = int(signer['x']) if signer['x'] is not None else None
-    y_val = int(signer['y']) if signer['y'] is not None else None
-    page_val = int(signer['page']) if signer['page'] is not None else 0
+        # Return the file for download
+        return send_file(
+            output_filename,
+            as_attachment=True,
+            download_name=f"{signer_name}_signed.pdf",
+            mimetype="application/pdf"
+        )
 
-    pdf_filename = None
-    if 'pdf_filename' in signer.keys() and signer['pdf_filename']:
-        pdf_filename = signer['pdf_filename']
-    elif 'pdf_path' in signer.keys() and signer['pdf_path']:
-        pdf_filename = os.path.basename(signer['pdf_path'])
-
-    preview_image = None
-    if pdf_filename:
-        preview_name = os.path.splitext(pdf_filename)[0] + '_preview.jpg'
-        preview_full = os.path.join('static', preview_name)
-        if os.path.exists(preview_full):
-            preview_image = preview_name
-        else:
-            logging.warning(f"Preview image not found: {preview_full} -- template will receive preview_image=None")
-
-    return render_template(
-        'sign.html',
-        signer=signer,
-        x=x_val,
-        y=y_val,
-        page=page_val,
-        preview_image=preview_image
-    )
+    # GET request — show upload form
+    return render_template("upload_signature.html")
 
 
 
