@@ -110,13 +110,17 @@ def sign_document(signer_name):
         page_val = int(signer['page']) if signer['page'] is not None else 0
         signer_x = float(signer['x']) if signer['x'] is not None else 0.0
         signer_y = float(signer['y']) if signer['y'] is not None else 0.0
+        sig_width_val = float(signer['sig_width']) if signer['sig_width'] is not None else 100.0
+        sig_height_val = float(signer['sig_height']) if signer['sig_height'] is not None else 50.0
 
         signer_data = {
             "name": signer_name,
             "page": page_val,
             "x": signer_x,
             "y": signer_y,
-            "signature_path": sig_path
+            "signature_path": sig_path,
+            "sig_width": sig_width_val,
+            "sig_height": sig_height_val
         }
 
         # Resolve pdf_path: use pdf_path if present, otherwise pdf_filename (basename)
