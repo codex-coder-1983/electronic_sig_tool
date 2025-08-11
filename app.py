@@ -81,7 +81,7 @@ def sign_document(signer_name):
 
     logging.info(f"Accessing sign_document for signer: {signer_name}")
 
-    signer_name = signer_name.lower()
+    signer_name = signer_name.lower().replace('_', ' ')
 
     # DB lookup
     conn = sqlite3.connect('signers.db')
