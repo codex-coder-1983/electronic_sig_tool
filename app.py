@@ -79,6 +79,7 @@ def sign_document(signer_name):
     import sqlite3
     from flask import request, render_template, redirect, url_for, flash
 
+    logging.warning(f"[sign_document] HIT route — method={request.method}")
     logging.info(f"Accessing sign_document for signer: {signer_name}")
 
     signer_name = signer_name.lower().replace('_', ' ')
