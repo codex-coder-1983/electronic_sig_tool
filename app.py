@@ -131,14 +131,24 @@ def sign_document(signer_name):
         if 'pdf_path' in signer.keys() and signer['pdf_path']:
             pdf_path = signer['pdf_path']
         elif 'pdf_filename' in signer.keys() and signer['pdf_filename']:
-            pdf_path = os.path.join("uploads", signer['pdf_filename'])
+            pdf_filename = signer['pdf_filename']
+            # Only prepend uploads/ if not already included
+            if not pdf_filename.startswith("uploads/"):
+                pdf_path = os.path.join("uploads", pdf_filename)
+            else:
+                pdf_path = pdf_filename
         else:
             logging.error("PDF information missing for signer in DB.")
             flash("Server error: PDF not found for this signer.")
             return redirect(request.url)
 
         # 🔍 Add logging so we can debug the actual PDF path
-        logging.info(f"[sign_document] Raw pdf_path from DB: {pdf_path}")        
+        logging.warning(f"[sign_document] Using PDF path: {pdf_path}")
+
+        if not os.path.exists(pdf_path):
+            logging.error(f"❌ PDF file not found: {pdf_path}")
+            flash("Server error: PDF file is missing.")
+            return redirect(request.url)        
 
         try:
             output_filename = merge_pdf_signatures(pdf_path, signers=[signer_data])
