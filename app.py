@@ -92,6 +92,10 @@ def sign_document(signer_name):
     signer = c.fetchone()
     conn.close()
 
+    # 🔍 Debug: Show exactly what we got from DB
+    logging.warning(f"[DEBUG] signer keys: {list(signer.keys()) if signer else 'NO SIGNER'}")
+    logging.warning(f"[DEBUG] signer row: {dict(signer) if signer else 'NO SIGNER'}")
+
     if not signer:
         logging.warning(f"Signer '{signer_name}' not found in DB")
         return "Invalid signer link", 404
