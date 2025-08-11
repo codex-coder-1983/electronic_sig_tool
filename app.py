@@ -132,6 +132,9 @@ def sign_document(signer_name):
             flash("Server error: PDF not found for this signer.")
             return redirect(request.url)
 
+        # 🔍 Add logging so we can debug the actual PDF path
+        logging.info(f"[sign_document] Raw pdf_path from DB: {pdf_path}")        
+
         try:
             output_filename = merge_pdf_signatures(pdf_path, signers=[signer_data])
         except Exception as e:
@@ -143,8 +146,8 @@ def sign_document(signer_name):
             conn = sqlite3.connect('signers.db')
             c = conn.cursor()
             c.execute(
-                "UPDATE signers SET status = ? WHERE LOWER(name) = ?",
-                ("signed", signer_name)
+                "UPDATE signers SET has_signed = 1 WHERE LOWER(name) = ?",
+                (signer_name,)
             )
             conn.commit()
             conn.close()
@@ -499,29 +502,28 @@ def delete_signer(signer_id):
 @app.route("/api/signer-statuses/<pdf_filename>")
 def signer_statuses_api(pdf_filename):
     import sqlite3
+    from flask import jsonify
+
     conn = sqlite3.connect("signers.db")
     cur = conn.cursor()
-    cur.execute("SELECT name, email, has_signed FROM signers WHERE pdf_filename = ?", (pdf_filename,))
+    cur.execute("""
+        SELECT name, email, has_signed
+        FROM signers
+        WHERE pdf_filename = ?
+    """, (pdf_filename,))
     rows = cur.fetchall()
     conn.close()
-
-    # Combine rows by name: mark as signed if any instance is signed
-    status_map = {}
-    for name, email, has_signed in rows:
-        if name not in status_map:
-            status_map[name] = has_signed
-        else:
-            status_map[name] = status_map[name] or has_signed  # True if any instance is signed
 
     return jsonify([
         {
             "name": name,
             "email": email,
-            "status": "Signed" if has_signed else "Pending",
+            "has_signed": has_signed,  # keep has_signed
             "class": "signed" if has_signed else "not-signed"
         }
         for name, email, has_signed in rows
     ])
+
 
 @app.route('/download/<filename>')
 def download_file(filename):
