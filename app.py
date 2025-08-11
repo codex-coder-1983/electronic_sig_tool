@@ -184,6 +184,7 @@ def sign_document(signer_name):
     return render_template(
         'sign.html',
         signer=signer,
+        signer_name=signer_name,
         x=x_val,
         y=y_val,
         page=page_val,
