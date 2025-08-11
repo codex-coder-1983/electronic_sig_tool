@@ -131,7 +131,7 @@ def sign_document(signer_name):
         if 'pdf_path' in signer.keys() and signer['pdf_path']:
             pdf_path = signer['pdf_path']
         elif 'pdf_filename' in signer.keys() and signer['pdf_filename']:
-            pdf_path = signer['pdf_filename']
+            pdf_path = os.path.join("uploads", signer['pdf_filename'])
         else:
             logging.error("PDF information missing for signer in DB.")
             flash("Server error: PDF not found for this signer.")
