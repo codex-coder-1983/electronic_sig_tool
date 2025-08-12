@@ -396,7 +396,8 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
 
     # Ensure absolute path to the PDF
     upload_dir = app.config.get('UPLOAD_FOLDER', 'uploads')
-    if not os.path.isabs(base_pdf_path):
+    # Only prepend upload_dir if path is not absolute AND not already starting with uploads/
+    if not os.path.isabs(base_pdf_path) and not base_pdf_path.startswith(upload_dir + "/"):
         base_pdf_path = os.path.join(upload_dir, base_pdf_path)
 
     logger.info(f"📄 Resolving PDF path: {base_pdf_path}")
