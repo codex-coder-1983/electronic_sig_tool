@@ -389,6 +389,11 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
 
     logger = logging.getLogger(__name__)
 
+    # 🛠 Fix accidental double 'uploads/uploads'
+    if base_pdf_path.startswith("uploads/uploads/"):
+        logger.warning(f"[merge_pdf_signatures] Fixing double uploads in path: {base_pdf_path}")
+        base_pdf_path = base_pdf_path.replace("uploads/uploads/", "uploads/", 1)    
+
     # Ensure absolute path to the PDF
     upload_dir = app.config.get('UPLOAD_FOLDER', 'uploads')
     if not os.path.isabs(base_pdf_path):
