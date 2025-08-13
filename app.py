@@ -28,6 +28,9 @@ from pyngrok import ngrok, conf
 ##    datefmt='%Y-%m-%d %H:%M:%S'
 ##)
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, 'signers.db')
+
 load_dotenv()  # Loads variables from .env file
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
@@ -83,7 +86,7 @@ def sign_document(pdf_filename, signer_id):
     logging.info(f"Accessing sign_document for signer_id={signer_id}, pdf_filename={pdf_filename}")
 
     # DB lookup by ID + filename
-    conn = sqlite3.connect('signers.db')
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("SELECT * FROM signers WHERE id = ? AND pdf_filename = ?", (signer_id, pdf_filename))
@@ -157,7 +160,7 @@ def sign_document(pdf_filename, signer_id):
             return redirect(request.url)
 
         try:
-            conn = sqlite3.connect('signers.db')
+            conn = sqlite3.connect(DB_PATH)
             c = conn.cursor()
             c.execute("UPDATE signers SET has_signed = 1 WHERE id = ? AND pdf_filename = ?", (signer_id, pdf_filename))
             conn.commit()
@@ -263,7 +266,7 @@ def set_signature_positions(pdf):
             return "❌ Invalid input data", 400
 
         print("📂 Using DB at:", os.path.abspath('signers.db'))
-        conn = sqlite3.connect('signers.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
 
         # Get next signer ID for this PDF
@@ -290,7 +293,7 @@ def set_signature_positions(pdf):
 
 
     # GET: Show signer management page
-    conn = sqlite3.connect('signers.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT id, name, email FROM signers WHERE pdf_filename = ?', (pdf_filename,))
     signers = c.fetchall()
@@ -326,7 +329,7 @@ def merge_route(pdf_filename):
     downloads_dir = str(Path.home() / "Downloads")
     os.makedirs(downloads_dir, exist_ok=True)
 
-    conn = sqlite3.connect('signers.db')
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row  # ✅ Return dict-like rows
     c = conn.cursor()
     c.execute("""
@@ -368,7 +371,7 @@ def set_merge_folder():
 
 @app.route('/done/<pdf>')
 def done_placing_signers(pdf):
-    conn = sqlite3.connect('signers.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT name, email, x, y, has_signed FROM signers WHERE pdf_filename = ?', (pdf,))
     signers = c.fetchall()
@@ -500,7 +503,7 @@ def success():
 # API: List of signers
 @app.route('/signers')
 def get_signers():
-    conn = sqlite3.connect('signers.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT id, name, email, x, y FROM signers')
     signers = [{'id': row[0], 'name': row[1], 'email': row[2], 'x': row[3], 'y': row[4]} for row in c.fetchall()]
@@ -510,7 +513,7 @@ def get_signers():
 # API: Delete signer
 @app.route('/delete_signer/<signer_id>', methods=['POST'])
 def delete_signer(signer_id):
-    conn = sqlite3.connect('signers.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('DELETE FROM signers WHERE id = ?', (signer_id,))
     conn.commit()
@@ -549,7 +552,7 @@ def download_file(filename):
 
 @app.route('/clear_signers/<pdf>', methods=['POST'])
 def clear_signers(pdf):
-    conn = sqlite3.connect('signers.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('DELETE FROM signers WHERE pdf_filename = ?', (pdf,))
     conn.commit()
@@ -557,7 +560,7 @@ def clear_signers(pdf):
     return jsonify({"success": True})
 
 def init_db():
-    conn = sqlite3.connect('signers.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
         CREATE TABLE IF NOT EXISTS signers (
