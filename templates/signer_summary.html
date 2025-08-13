@@ -101,14 +101,13 @@
             if (row) {
               const statusCell = row.querySelector(".status");
               if (statusCell) {
-                statusCell.textContent = signer.status;
-                statusCell.className = "status " + signer.class;
-                console.log(`🔁 Updated ${signer.name}: ${signer.status}`);
+                // Coerce to boolean (handles 1/0, true/false, "1"/"0", null)
+                const signed = !!Number(signer.has_signed);
+                statusCell.textContent = signed ? "Signed" : "Pending";
+                statusCell.className = "status " + (signed ? "signed" : "not-signed");
+                console.log(`🔁 Updated ${signer.name}: ${signed ? "Signed" : "Pending"}`);
+                if (!signed) allSigned = false;
               }
-            }
-
-            if (signer.status !== "Signed") {
-              allSigned = false;
             }
           });
 
