@@ -29,26 +29,30 @@
   </noscript>
 
   <script>
-    // Auto-download PDF
-    const pdfUrl = "{{ pdf_url }}";
-    const link = document.createElement('a');
-    link.href = pdfUrl;
-    link.download = "";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    // Countdown to close
-    let counter = 5;
-    const countEl = document.getElementById("count");
-    const countdown = setInterval(() => {
-      counter--;
-      countEl.textContent = counter;
-      if (counter === 0) {
-        clearInterval(countdown);
-        window.close();  // Only works if tab was opened via JS
+    window.addEventListener('load', function() {
+      // ✅ Auto-download PDF after page fully loads
+      const pdfUrl = "{{ pdf_url }}";
+      if (pdfUrl) {
+        const link = document.createElement('a');
+        link.href = pdfUrl;
+        link.download = "";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       }
-    }, 1000);
+
+      // ✅ Countdown to close tab
+      let counter = 5;
+      const countEl = document.getElementById("count");
+      const countdown = setInterval(() => {
+        counter--;
+        countEl.textContent = counter;
+        if (counter === 0) {
+          clearInterval(countdown);
+          window.close(); // Works only if tab opened by JS
+        }
+      }, 1000);
+    });
   </script>
 </body>
 </html>

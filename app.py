@@ -131,49 +131,45 @@ def sign_document(signer_name):
         if 'pdf_path' in signer.keys() and signer['pdf_path']:
             pdf_path = signer['pdf_path']
         elif 'pdf_filename' in signer.keys() and signer['pdf_filename']:
-            pdf_filename = signer['pdf_filename']
-            # Only prepend uploads/ if not already included
             if not pdf_filename.startswith("uploads/"):
                 pdf_path = os.path.join("uploads", pdf_filename)
             else:
                 pdf_path = pdf_filename
         else:
-            logging.error("PDF information missing for signer in DB.")
             flash("Server error: PDF not found for this signer.")
             return redirect(request.url)
 
-        # 🔍 Add logging so we can debug the actual PDF path
-        logging.warning(f"[sign_document] Using PDF path: {pdf_path}")
-
         if not os.path.exists(pdf_path):
-            logging.error(f"❌ PDF file not found: {pdf_path}")
             flash("Server error: PDF file is missing.")
             return redirect(request.url)        
 
         try:
             output_filename = merge_pdf_signatures(pdf_path, signers=[signer_data])
-        except Exception as e:
-            logging.exception("Error while merging signature into PDF")
+        except Exception:
             flash("An error occurred while processing your signature. Please try again.")
             return redirect(request.url)
+
+        # Save into 'signed' folder with only the filename part
+        signed_folder = 'signed'
+        os.makedirs(signed_folder, exist_ok=True)
+        final_filename = os.path.basename(output_filename)
+        final_path = os.path.join(signed_folder, final_filename)
+        os.replace(output_filename, final_path)  # Move file
 
         try:
             conn = sqlite3.connect('signers.db')
             c = conn.cursor()
-            c.execute(
-                "UPDATE signers SET has_signed = 1 WHERE LOWER(name) = ?",
-                (signer_name,)
-            )
+            c.execute("UPDATE signers SET has_signed = 1 WHERE LOWER(name) = ?", (signer_name,))
             conn.commit()
             conn.close()
-            logging.info(f"Status updated to 'signed' for {signer_name}")
-        except Exception as e:
+        except Exception:
             logging.exception("Failed to update signer status in DB")
 
-        logging.info(f"Signature merged successfully for {signer_name} into {output_filename}")
-        
-        # ✅ Directly send the merged PDF for download
-        return send_file(output_filename, as_attachment=True)
+        logging.info(f"Signature merged successfully for {signer_name} into {final_path}")
+
+        # ✅ Render success.html instead of sending the file directly
+        pdf_url = url_for('download_file', filename=final_filename)
+        return render_template('success.html', pdf_url=pdf_url)
 
     # GET request part remains unchanged
     x_val = int(signer['x']) if signer['x'] is not None else None
