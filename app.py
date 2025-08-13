@@ -429,10 +429,14 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
 
     # Loop through all signers
     for signer in signers:
+        sig_path = signer['signature_path']
+        if not sig_path or not os.path.exists(sig_path):
+            logging.error(f"❌ Skipping signer — signature file missing: {sig_path}")
+            continue  # Skip to the next signer        
         page_number = signer['page']
         x = signer['x']
         y = signer['y']
-        sig_path = signer['signature_path']
+
         sig_width = signer['sig_width']
         sig_height = signer['sig_height']
 
@@ -449,12 +453,7 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
         sig_height_pts = sig_height * page_height / img_height
 
         # Place signature
-        sig_rect = fitz.Rect(
-            x_pdf,
-            y_pdf - sig_height_pts,
-            x_pdf + sig_width_pts,
-            y_pdf
-        )
+        sig_rect = fitz.Rect(x_pdf, y_pdf - sig_height_pts, x_pdf + sig_width_pts, y_pdf)
         page.insert_image(sig_rect, filename=sig_path)
         logger.info(f"🖊️ Signature inserted at: {sig_rect}")
 
