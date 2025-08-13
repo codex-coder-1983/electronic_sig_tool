@@ -286,12 +286,13 @@ def set_signature_positions(pdf):
         # Generate signer link with correct route and normalized name
         base_url = request.host_url.rstrip('/')
         signer_name_for_url = name.lower().replace(' ', '_')
-        signing_link = f"{base_url}/sign_document/{signer_name_for_url}"
+        signing_link = f"{base_url}/sign_document/{pdf_filename}/{signer_id}"
         logger.info(f"✅ Signing link for {name} ({email}): {signing_link}")
 
         print(f"Signer link: {signing_link}")  # For logs
 
-        return '', 204  # Silent success for JS frontend
+        return jsonify({"success": True, "signing_link": signing_link})
+
 
     # GET: Show signer management page
     conn = sqlite3.connect('signers.db')

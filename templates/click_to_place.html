@@ -76,19 +76,20 @@
     <div id="nameModal" class="modal">
         <div class="modal-content">
             <span class="close" id="modalClose">&times;</span>
-<form id="signerForm" method="POST">
-  <label>Name:</label><br>
-  <input type="text" name="name" required><br><br>
+            <form id="signerForm" method="POST">
+              <label>Name:</label><br>
+              <input type="text" id="signerName" name="name" required><br><br>
 
-  <label>Email:</label><br>
-  <input type="email" name="email" required><br><br>
+              <label>Email:</label><br>
+              <input type="email" name="email" required><br><br>
 
-  <input type="hidden" name="x" id="xCoord">
-  <input type="hidden" name="y" id="yCoord">
+              <input type="hidden" name="x" id="xCoord">
+              <input type="hidden" name="y" id="yCoord">
 
-  <button type="submit">Add Signer</button>
-</form>
-
+              <button type="submit">Add Signer</button>
+              <br><br>
+              <span id="status"></span>
+            </form>
         </div>
     </div>
 
@@ -117,8 +118,16 @@
             <!-- Rows will be inserted here -->
         </tbody>
     </table>
+    
+    <!-- Section to display after adding a signer -->
+    <div id="signerLinkSection" style="display:none; margin-top:20px;">
+        <p><strong>Signer Link:</strong> 
+            <a id="signerLink" href="#" target="_blank"></a>
+        </p>
+        <button onclick="copySignerLink()">📋 Copy Link</button>
+    </div>    
 
-    <divmod style="margin-top: 20px;">
+    <div style="margin-top: 20px;">
         <button onclick="finishSetup()" style="padding: 10px 20px; background-color: green; color: white; border: none; border-radius: 5px;">
             ✅ DONE
         </button>
@@ -175,6 +184,13 @@
             alert("Signer setup completed. You will now return to the home page.");
             window.location.href = "/";
         }
+
+        function copySignerLink() {
+            const linkText = document.getElementById('signerLink').href;
+            navigator.clipboard.writeText(linkText).then(() => {
+                alert("Link copied to clipboard!");
+            });
+        }        
         
         image.addEventListener('click', function(e) {
             const rect = image.getBoundingClientRect();
@@ -214,13 +230,24 @@
                 method: 'POST',
                 body: formData
             })
-            .then(res => res.text())
+            .then(res => res.json())
             .then(data => {
-                modal.style.display = 'none';
-                signerName.value = '';
-                loadSigners();
-                confirmModal.style.display = 'block';
+                console.log("Response from backend:", data);
+                if (data.success) {
+                    modal.style.display = 'none';
+                    loadSigners();
+                    confirmModal.style.display = 'block';
+
+                    // Show link section
+                    const linkSection = document.getElementById('signerLinkSection');
+                    const linkEl = document.getElementById('signerLink');
+                    console.log("📩 Server response data:", data);
+                    linkEl.href = data.signing_link;
+                    linkEl.textContent = data.signing_link;
+                    linkSection.style.display = 'block';
+                }
             })
+
             .catch(err => {
                 status.textContent = "❌ Error adding signer.";
                 console.error(err);
