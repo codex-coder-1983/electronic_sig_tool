@@ -5,10 +5,9 @@
     <style>
         img {
             max-width: 100%;
-            outline: 2px solid #aaa;  /* Use outline instead of border */
+            border: 2px solid #aaa;
             cursor: crosshair;
         }
-
         #dot {
             position: absolute;
             width: 10px;
@@ -18,19 +17,6 @@
             transform: translate(-50%, -50%);
             pointer-events: none;
             display: none;
-        }
-        #dot::after {
-            content: attr(data-coord);
-            position: absolute;
-            top: -20px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 10px;
-            background: #222;
-            color: #fff;
-            padding: 2px 5px;
-            border-radius: 4px;
-            white-space: nowrap;
         }
         .modal, .confirm-modal {
             display: none;
@@ -80,11 +66,9 @@
 </head>
 <body>
     <h2>Click on the image to place a signature</h2>
-    
-    <p>Current PDF: <strong>{{ pdf }}</strong></p>
-    
+
     <div style="position: relative;">
-        <img id="pdf-preview" src="{{ url_for('static', filename=pdf.replace('.pdf', '_preview.jpg')) }}">
+        <img id="pdfImage" src="{{ url_for('static', filename='preview.jpg') }}">
         <div id="dot"></div>
     </div>
 
@@ -92,18 +76,19 @@
     <div id="nameModal" class="modal">
         <div class="modal-content">
             <span class="close" id="modalClose">&times;</span>
-            <form id="signerForm" method="POST">
-              <label>Name:</label><br>
-              <input type="text" name="name" required><br><br>
+<form id="signerForm" method="POST">
+  <label>Name:</label><br>
+  <input type="text" name="name" required><br><br>
 
-              <label>Email:</label><br>
-              <input type="email" name="email" required><br><br>
+  <label>Email:</label><br>
+  <input type="email" name="email" required><br><br>
 
-              <input type="hidden" name="x" id="xCoord">
-              <input type="hidden" name="y" id="yCoord">
+  <input type="hidden" name="x" id="xCoord">
+  <input type="hidden" name="y" id="yCoord">
 
-              <button type="submit">Add Signer</button>
-            </form>
+  <button type="submit">Add Signer</button>
+</form>
+
         </div>
     </div>
 
@@ -123,8 +108,8 @@
         <thead>
             <tr>
                 <th>Name</th>
-                <th>Email</th>
-                <th>Link</th>
+                <th>X</th>
+                <th>Y</th>
                 <th>Action</th>
             </tr>
         </thead>
@@ -133,23 +118,24 @@
         </tbody>
     </table>
 
-    <!-- Done Button -->
-    <form action="{{ url_for('done_placing_signers', pdf=pdf) }}" method="get" style="margin-top: 20px; text-align: center;">
-      <button type="submit" style="padding: 10px 20px; font-size: 16px;">✅ Done</button>
-    </form>
+    <divmod style="margin-top: 20px;">
+        <button onclick="finishSetup()" style="padding: 10px 20px; background-color: green; color: white; border: none; border-radius: 5px;">
+            ✅ DONE
+        </button>
+    </div>
     
+
     <script>
-        const currentPdf = "{{ pdf }}";
-    </script>
-        
-    <script>
-        const image = document.getElementById('pdf-preview');
+        const image = document.getElementById('pdfImage');
         const dot = document.getElementById('dot');
         const xInput = document.getElementById('xCoord');
         const yInput = document.getElementById('yCoord');
         const modal = document.getElementById('nameModal');
         const modalClose = document.getElementById('modalClose');
         const signerForm = document.getElementById('signerForm');
+        const signerName = document.getElementById('signerName');
+        const status = document.getElementById('status');
+
         const confirmModal = document.getElementById('confirmModal');
         const confirmOK = document.getElementById('confirmOK');
         const confirmClose = document.getElementById('confirmClose');
@@ -162,14 +148,10 @@
                     signerTable.innerHTML = "";
                     data.forEach(signer => {
                         const row = document.createElement('tr');
-                        row.id = `signer-row-${signer.id}`;
                         row.innerHTML = `
                             <td>${signer.name}</td>
-                            <td>${signer.email}</td>
-                            <td>
-                                <a href="/sign_document/${encodeURIComponent(signer.name)}" target="_blank">/sign_document/${signer.name}</a>
-                                <button onclick="copyLink(this)" data-link="/sign_document/${encodeURIComponent(signer.name)}">📋 Copy</button>
-                            </td>
+                            <td>${signer.x}</td>
+                            <td>${signer.y}</td>
                             <td><button onclick="deleteSigner('${signer.id}')">❌ Delete</button></td>
                         `;
                         signerTable.appendChild(row);
@@ -184,59 +166,34 @@
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
-                    const row = document.getElementById(`signer-row-${signerId}`);
-                    if (row) row.remove();
+                    loadSigners();
                 }
             });
-        }
-
-        function copyLink(button) {
-            const link = button.getAttribute('data-link');
-            navigator.clipboard.writeText(location.origin + link)
-                .then(() => {
-                    showCopyToast();
-                })
-                .catch(err => {
-                    console.error('Failed to copy: ', err);
-                });
-        }
-
-        function showCopyToast() {
-            const toast = document.getElementById('copyToast');
-            toast.style.display = 'block';
-            setTimeout(() => {
-                toast.style.display = 'none';
-            }, 2000);
         }
 
         function finishSetup() {
             alert("Signer setup completed. You will now return to the home page.");
             window.location.href = "/";
         }
-
+        
         image.addEventListener('click', function(e) {
             const rect = image.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
-            console.log(`Click raw: x=${x}, y=${y}`);
 
             dot.style.left = `${x}px`;
             dot.style.top = `${y}px`;
             dot.style.display = 'block';
-            dot.setAttribute('data-coord', `X: ${Math.round(x)}, Y: ${Math.round(y)}`);
 
-            // Use actual image resolution
-            const xRatio = x / image.clientWidth;
-            const yRatio = y / image.clientHeight;
-            xInput.value = Math.round(xRatio * image.naturalWidth);
-            // Flip the Y-axis by subtracting from the image's natural height
-            yInput.value = Math.round(image.naturalHeight - (yRatio * image.naturalHeight));
+            xInput.value = Math.round(x);
+            yInput.value = Math.round(y);
 
             modal.style.display = 'block';
         });
 
         modalClose.onclick = () => {
             modal.style.display = 'none';
+            status.textContent = '';
         };
 
         confirmClose.onclick = confirmOK.onclick = () => {
@@ -260,32 +217,17 @@
             .then(res => res.text())
             .then(data => {
                 modal.style.display = 'none';
+                signerName.value = '';
                 loadSigners();
                 confirmModal.style.display = 'block';
             })
             .catch(err => {
-                alert("❌ Error adding signer.");
+                status.textContent = "❌ Error adding signer.";
                 console.error(err);
             });
         });
 
         loadSigners();
     </script>
-
-    <div id="copyToast" style="
-        display: none;
-        position: fixed;
-        bottom: 30px;
-        left: 50%;
-        transform: translateX(-50%);
-        background-color: #333;
-        color: #fff;
-        padding: 12px 20px;
-        border-radius: 8px;
-        font-size: 14px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-        z-index: 1000;
-    ">🔗 Signing link copied!</div>
-    
 </body>
 </html>

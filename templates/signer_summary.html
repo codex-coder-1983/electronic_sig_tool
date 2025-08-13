@@ -101,7 +101,7 @@
             if (row) {
               const statusCell = row.querySelector(".status");
               if (statusCell) {
-                statusCell.textContent = signer.status;
+                statusCell.textContent = signer.has_signed ? "Signed" : "Pending";
                 statusCell.className = "status " + signer.class;
                 console.log(`🔁 Updated ${signer.name}: ${signer.status}`);
               }

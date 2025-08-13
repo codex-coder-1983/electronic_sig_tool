@@ -527,24 +527,28 @@ def signer_statuses_api(pdf_filename):
     from flask import jsonify
 
     conn = sqlite3.connect("signers.db")
+    conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     cur.execute("""
-        SELECT name, email, has_signed
+        SELECT name, email, 
+               COALESCE(has_signed, 0) AS has_signed
         FROM signers
         WHERE pdf_filename = ?
     """, (pdf_filename,))
     rows = cur.fetchall()
     conn.close()
 
-    return jsonify([
-        {
-            "name": name,
-            "email": email,
-            "has_signed": has_signed,  # keep has_signed
-            "class": "signed" if has_signed else "not-signed"
-        }
-        for name, email, has_signed in rows
-    ])
+    result = []
+    for row in rows:
+        signed = bool(row["has_signed"])
+        result.append({
+            "name": row["name"],
+            "email": row["email"],
+            "has_signed": signed,
+            "class": "signed" if signed else "not-signed"
+        })
+
+    return jsonify(result)
 
 
 @app.route('/download/<filename>')
