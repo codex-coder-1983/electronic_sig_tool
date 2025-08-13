@@ -262,6 +262,7 @@ def set_signature_positions(pdf):
             logger.error(f"Invalid form data: {e}")
             return "❌ Invalid input data", 400
 
+        print("📂 Using DB at:", os.path.abspath('signers.db'))
         conn = sqlite3.connect('signers.db')
         c = conn.cursor()
 
@@ -545,6 +546,15 @@ def signer_statuses_api(pdf_filename):
 @app.route('/download/<filename>')
 def download_file(filename):
     return send_from_directory('signed', filename, as_attachment=True)
+
+@app.route('/clear_signers/<pdf>', methods=['POST'])
+def clear_signers(pdf):
+    conn = sqlite3.connect('signers.db')
+    c = conn.cursor()
+    c.execute('DELETE FROM signers WHERE pdf_filename = ?', (pdf,))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
 
 def init_db():
     conn = sqlite3.connect('signers.db')
