@@ -128,33 +128,34 @@ def sign_document(signer_name):
             "sig_height": sig_height_val
         }
 
+        # ✅ Always resolve PDF path/filename first
+        pdf_path = None
         if 'pdf_path' in signer.keys() and signer['pdf_path']:
             pdf_path = signer['pdf_path']
         elif 'pdf_filename' in signer.keys() and signer['pdf_filename']:
+            pdf_filename = signer['pdf_filename']
             if not pdf_filename.startswith("uploads/"):
                 pdf_path = os.path.join("uploads", pdf_filename)
             else:
                 pdf_path = pdf_filename
         else:
+            logging.error("PDF information missing for signer in DB.")
             flash("Server error: PDF not found for this signer.")
             return redirect(request.url)
 
+        logging.warning(f"[sign_document] Using PDF path: {pdf_path}")
+
         if not os.path.exists(pdf_path):
+            logging.error(f"❌ PDF file not found: {pdf_path}")
             flash("Server error: PDF file is missing.")
-            return redirect(request.url)        
+            return redirect(request.url)
 
         try:
             output_filename = merge_pdf_signatures(pdf_path, signers=[signer_data])
         except Exception:
+            logging.exception("Error while merging signature into PDF")
             flash("An error occurred while processing your signature. Please try again.")
             return redirect(request.url)
-
-        # Save into 'signed' folder with only the filename part
-        signed_folder = 'signed'
-        os.makedirs(signed_folder, exist_ok=True)
-        final_filename = os.path.basename(output_filename)
-        final_path = os.path.join(signed_folder, final_filename)
-        os.replace(output_filename, final_path)  # Move file
 
         try:
             conn = sqlite3.connect('signers.db')
@@ -162,14 +163,17 @@ def sign_document(signer_name):
             c.execute("UPDATE signers SET has_signed = 1 WHERE LOWER(name) = ?", (signer_name,))
             conn.commit()
             conn.close()
+            logging.info(f"Status updated to 'signed' for {signer_name}")
         except Exception:
             logging.exception("Failed to update signer status in DB")
 
-        logging.info(f"Signature merged successfully for {signer_name} into {final_path}")
+        logging.info(f"Signature merged successfully for {signer_name} into {output_filename}")
 
-        # ✅ Render success.html instead of sending the file directly
-        pdf_url = url_for('download_file', filename=final_filename)
-        return render_template('success.html', pdf_url=pdf_url)
+        # ✅ Instead of sending file directly, show success page with countdown + download
+        return render_template(
+            'success.html',
+            pdf_url=url_for('download_file', filename=os.path.basename(output_filename))
+        )
 
     # GET request part remains unchanged
     x_val = int(signer['x']) if signer['x'] is not None else None
