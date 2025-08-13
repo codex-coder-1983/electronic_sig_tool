@@ -72,33 +72,33 @@ def show_routes():
 
 from flask import send_file  # add this import at the top of your file
 
-@app.route('/sign_document/<signer_name>', methods=['GET', 'POST'])
-def sign_document(signer_name):
+@app.route('/sign_document/<pdf_filename>/<int:signer_id>', methods=['GET', 'POST'])
+def sign_document(pdf_filename, signer_id):
     import os
     import logging
     import sqlite3
     from flask import request, render_template, redirect, url_for, flash
 
     logging.warning(f"[sign_document] HIT route — method={request.method}")
-    logging.info(f"Accessing sign_document for signer: {signer_name}")
+    logging.info(f"Accessing sign_document for signer_id={signer_id}, pdf_filename={pdf_filename}")
 
-    signer_name = signer_name.lower().replace('_', ' ')
-
-    # DB lookup
+    # DB lookup by ID + filename
     conn = sqlite3.connect('signers.db')
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("SELECT * FROM signers WHERE LOWER(name) = ?", (signer_name,))
+    c.execute("SELECT * FROM signers WHERE id = ? AND pdf_filename = ?", (signer_id, pdf_filename))
     signer = c.fetchone()
     conn.close()
 
-    # 🔍 Debug: Show exactly what we got from DB
+    # Debug info
     logging.warning(f"[DEBUG] signer keys: {list(signer.keys()) if signer else 'NO SIGNER'}")
     logging.warning(f"[DEBUG] signer row: {dict(signer) if signer else 'NO SIGNER'}")
 
     if not signer:
-        logging.warning(f"Signer '{signer_name}' not found in DB")
+        logging.warning(f"Signer with id={signer_id} and pdf_filename='{pdf_filename}' not found in DB")
         return "Invalid signer link", 404
+
+    signer_name = signer['name']
 
     if request.method == 'POST':
         sig_file = request.files.get('signature')
@@ -128,12 +128,11 @@ def sign_document(signer_name):
             "sig_height": sig_height_val
         }
 
-        # ✅ Always resolve PDF path/filename first
+        # Resolve PDF path
         pdf_path = None
         if 'pdf_path' in signer.keys() and signer['pdf_path']:
             pdf_path = signer['pdf_path']
         elif 'pdf_filename' in signer.keys() and signer['pdf_filename']:
-            pdf_filename = signer['pdf_filename']
             if not pdf_filename.startswith("uploads/"):
                 pdf_path = os.path.join("uploads", pdf_filename)
             else:
@@ -160,31 +159,24 @@ def sign_document(signer_name):
         try:
             conn = sqlite3.connect('signers.db')
             c = conn.cursor()
-            c.execute("UPDATE signers SET has_signed = 1 WHERE LOWER(name) = ?", (signer_name,))
+            c.execute("UPDATE signers SET has_signed = 1 WHERE id = ? AND pdf_filename = ?", (signer_id, pdf_filename))
             conn.commit()
             conn.close()
-            logging.info(f"Status updated to 'signed' for {signer_name}")
+            logging.info(f"Status updated to 'signed' for signer_id={signer_id}")
         except Exception:
             logging.exception("Failed to update signer status in DB")
 
         logging.info(f"Signature merged successfully for {signer_name} into {output_filename}")
 
-        # ✅ Instead of sending file directly, show success page with countdown + download
         return render_template(
             'success.html',
             pdf_url=url_for('download_file', filename=os.path.basename(output_filename))
         )
 
-    # GET request part remains unchanged
+    # GET request
     x_val = int(signer['x']) if signer['x'] is not None else None
     y_val = int(signer['y']) if signer['y'] is not None else None
     page_val = int(signer['page']) if signer['page'] is not None else 0
-
-    pdf_filename = None
-    if 'pdf_filename' in signer.keys() and signer['pdf_filename']:
-        pdf_filename = signer['pdf_filename']
-    elif 'pdf_path' in signer.keys() and signer['pdf_path']:
-        pdf_filename = os.path.basename(signer['pdf_path'])
 
     preview_image = None
     if pdf_filename:
@@ -193,7 +185,7 @@ def sign_document(signer_name):
         if os.path.exists(preview_full):
             preview_image = preview_name
         else:
-            logging.warning(f"Preview image not found: {preview_full} -- template will receive preview_image=None")
+            logging.warning(f"Preview image not found: {preview_full}")
 
     return render_template(
         'sign.html',
@@ -204,6 +196,7 @@ def sign_document(signer_name):
         page=page_val,
         preview_image=preview_image
     )
+
 
 
 # Home
