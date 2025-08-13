@@ -53,7 +53,7 @@
 
         <!-- Simplified form (standard POST) -->
         <form class="upload-form" 
-              action="{{ url_for('sign_document', signer_name=signer_name) }}" 
+              action="{{ url_for('sign_document', pdf_filename=pdf_filename, signer_id=signer['id']) }}" 
               method="POST" 
               enctype="multipart/form-data">
             <input type="file" name="signature" accept="image/*" required><br><br>

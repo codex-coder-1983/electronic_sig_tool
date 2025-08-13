@@ -190,6 +190,7 @@ def sign_document(pdf_filename, signer_id):
     return render_template(
         'sign.html',
         signer=signer,
+        pdf_filename=pdf_filename,
         signer_name=signer_name,
         x=x_val,
         y=y_val,
