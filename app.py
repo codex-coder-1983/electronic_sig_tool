@@ -566,6 +566,9 @@ def init_db():
             email TEXT,
             x INTEGER,
             y INTEGER,
+            page INTEGER,
+            sig_width INTEGER,
+            sig_height INTEGER,
             pdf_filename TEXT,
             signature_path TEXT,
             has_signed INTEGER DEFAULT 0
