@@ -322,7 +322,7 @@ def set_signature_positions(pdf):
             logger.error(f"Error generating preview image: {e}")
             return f"❌ Error generating preview: {e}"
 
-    return render_template('click_to_place.html', pdf=pdf_filename, signers=signers_with_links)
+    return render_template('click_to_place.html', pdf=pdf_filename, signers=signers_with_links, preview_name=preview_name)
 
 
 @app.route('/merge/<pdf_filename>', methods=['POST'])
