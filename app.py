@@ -326,22 +326,23 @@ def merge_route(pdf_filename):
     os.makedirs(downloads_dir, exist_ok=True)
 
     conn = sqlite3.connect('signers.db')
+    conn.row_factory = sqlite3.Row  # ✅ Return dict-like rows
     c = conn.cursor()
-    c.execute('SELECT x, y, signature_path FROM signers WHERE pdf_filename=? AND has_signed=1', (pdf_filename,))
-    rows = c.fetchall()
+    c.execute("""
+        SELECT page, x, y, signature_path, sig_width, sig_height
+        FROM signers
+        WHERE pdf_filename=? AND has_signed=1
+    """, (pdf_filename,))
+    signers = c.fetchall()
     conn.close()
 
-    if not rows:
+    if not signers:
         flash("❌ No signed signatures to merge yet.")
         return redirect(url_for('get_signers', pdf_filename=pdf_filename))
 
-    signers = [{"x": x, "y": y, "signature_path": sig} for x, y, sig in rows]
-
     try:
-        # Convert to (x, y, path) tuples for merge_pdf_signatures
-        signer_data = [(s["x"], s["y"], s["signature_path"]) for s in signers]
-
-        output_path = merge_pdf_signatures(pdf_filename, signer_data, output_folder='signed')
+        # ✅ Pass list of Row objects directly
+        output_path = merge_pdf_signatures(pdf_filename, signers, output_folder='signed')
         filename = os.path.basename(output_path)
         download_url = url_for('download_file', filename=filename)
         sms = "✅ Signatures successfully merged into the PDF."
