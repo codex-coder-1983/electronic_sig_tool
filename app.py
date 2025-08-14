@@ -331,8 +331,17 @@ def merge_route(pdf_filename):
     os.makedirs(downloads_dir, exist_ok=True)
 
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # ✅ Return dict-like rows
+    conn.row_factory = sqlite3.Row
     c = conn.cursor()
+
+    # 🔍 Step 1: See all rows for this PDF first
+    c.execute("SELECT * FROM signers WHERE pdf_filename=?", (pdf_filename,))
+    all_rows = c.fetchall()
+    print(f"📊 Found {len(all_rows)} signer(s) for {pdf_filename}:")
+    for row in all_rows:
+        print(dict(row))
+
+    # Step 2: Your filtered query
     c.execute("""
         SELECT name, email, page, x, y, signature_path, sig_width, sig_height
         FROM signers
@@ -341,7 +350,7 @@ def merge_route(pdf_filename):
     
     signers = c.fetchall()
     
-    # 🔍 Debug: print DB schema
+    # Debug: print DB schema
     c.execute("PRAGMA table_info(signers)")
     columns = c.fetchall()
     print("📋 signers table columns in DB:")
@@ -350,12 +359,23 @@ def merge_route(pdf_filename):
     
     conn.close()
 
+    # Step 3: Explain why empty
     if not signers:
+        print("🚨 No rows matched the filter.")
+        for row in all_rows:
+            reasons = []
+            if row["has_signed"] != 1:
+                reasons.append(f"has_signed={row['has_signed']}")
+            if row["page"] is None:
+                reasons.append("page=NULL")
+            if reasons:
+                print(f"   ❌ {row['email']} excluded because: {', '.join(reasons)}")
+            else:
+                print(f"   ✅ {row['email']} meets conditions, should have matched.")
         flash("❌ No signed signatures to merge yet.")
         return redirect(url_for('get_signers', pdf_filename=pdf_filename))
 
     try:
-        # ✅ Pass list of Row objects directly
         output_path = merge_pdf_signatures(pdf_filename, signers, output_folder='signed')
         filename = os.path.basename(output_path)
         download_url = url_for('download_file', filename=filename)
