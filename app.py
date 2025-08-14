@@ -333,7 +333,7 @@ def merge_route(pdf_filename):
     c.execute("""
         SELECT name, email, page, x, y, signature_path, sig_width, sig_height
         FROM signers
-        WHERE pdf_filename=? AND has_signed=1
+        WHERE pdf_filename=? AND has_signed=1 AND page IS NOT NULL
     """, (pdf_filename,))
     
     signers = c.fetchall()
