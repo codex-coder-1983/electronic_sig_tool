@@ -31,6 +31,9 @@ from pyngrok import ngrok, conf
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'signers.db')
 
+print(f"DB path: {DB_PATH}")
+print(f"DB exists? {os.path.exists(DB_PATH)}")
+
 load_dotenv()  # Loads variables from .env file
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
