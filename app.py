@@ -162,10 +162,14 @@ def sign_document(pdf_filename, signer_id):
         try:
             conn = sqlite3.connect(DB_PATH)
             c = conn.cursor()
-            c.execute("UPDATE signers SET has_signed = 1 WHERE id = ? AND pdf_filename = ?", (signer_id, pdf_filename))
+            c.execute("""
+                UPDATE signers
+                SET has_signed = 1, signature_path = ?
+                WHERE id = ? AND pdf_filename = ?
+            """, (sig_path, signer_id, pdf_filename))
             conn.commit()
             conn.close()
-            logging.info(f"Status updated to 'signed' for signer_id={signer_id}")
+            logging.info(f"Status updated to 'signed' and signature_path set for signer_id={signer_id}")
         except Exception:
             logging.exception("Failed to update signer status in DB")
 
@@ -190,17 +194,8 @@ def sign_document(pdf_filename, signer_id):
         else:
             logging.warning(f"Preview image not found: {preview_full}")
 
-    return render_template(
-        'sign.html',
-        signer=signer,
-        pdf_filename=pdf_filename,
-        signer_name=signer_name,
-        x=x_val,
-        y=y_val,
-        page=page_val,
-        preview_image=preview_image
-    )
-
+    return render_template('sign.html', signer=signer, pdf_filename=pdf_filename,
+        signer_name=signer_name, x=x_val, y=y_val, page=page_val, preview_image=preview_image)
 
 
 # Home

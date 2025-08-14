@@ -1,0 +1,9 @@
+version: "3.9"
+services:
+  signature-app:
+    build: .
+    container_name: signature-app
+    ports:
+      - "10000:10000"
+    volumes:
+      - /c/Users/cerilo.cabacoy/AppData/Local/Programs/Python/Python313/Eletronic_Signature\ Project/signers.db:/app/signers.db

@@ -1,6 +1,6 @@
 FROM python:3.10-slim
 
-# Set environment variables
+# Environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
 
@@ -14,21 +14,19 @@ RUN apt-get update && apt-get install -y \
     libxrender-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Set work directory
+# Set working directory
 WORKDIR /app
 
-# Copy files
+# Copy project files (but NOT your local DB)
 COPY . /app
+RUN rm -f /app/signers.db
 
-# Install system dependencies including Poppler
-RUN apt-get update && apt-get install -y poppler-utils
-
-# Install Python packages
+# Install Python dependencies
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
-# Expose the port
+# Expose app port
 EXPOSE 10000
 
-# Run the app
+# Start the app
 CMD ["gunicorn", "--bind", "0.0.0.0:10000", "app:app"]
