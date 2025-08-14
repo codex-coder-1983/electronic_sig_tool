@@ -331,10 +331,11 @@ def merge_route(pdf_filename):
     conn.row_factory = sqlite3.Row  # ✅ Return dict-like rows
     c = conn.cursor()
     c.execute("""
-        SELECT page, x, y, signature_path, sig_width, sig_height
+        SELECT name, email, page, x, y, signature_path, sig_width, sig_height
         FROM signers
         WHERE pdf_filename=? AND has_signed=1
     """, (pdf_filename,))
+    
     signers = c.fetchall()
     
     # 🔍 Debug: print DB schema
