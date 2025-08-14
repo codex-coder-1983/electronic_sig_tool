@@ -408,6 +408,7 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
     doc = fitz.open(base_pdf_path)
     print(f"PDF has {len(doc)} pages")
 
+    signers = [dict(row) for row in signers]
     for signer in signers:
         print(f"Signer: {signer['name']}, page in DB: {signer['page']}")
         if signer['page'] >= len(doc):
