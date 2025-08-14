@@ -584,10 +584,10 @@ with app.test_request_context():
 def page_not_found(e):
     app.logger.warning(f"404: {request.method} {request.path}")
     return "Not Found", 404
-        
+
+init_db()        
 
 if __name__ == '__main__':
-    init_db()
 
     USE_NGROK = False  # Change to True if you want ngrok to run
 
