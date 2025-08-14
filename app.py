@@ -336,6 +336,14 @@ def merge_route(pdf_filename):
         WHERE pdf_filename=? AND has_signed=1
     """, (pdf_filename,))
     signers = c.fetchall()
+    
+    # 🔍 Debug: print DB schema
+    c.execute("PRAGMA table_info(signers)")
+    columns = c.fetchall()
+    print("📋 signers table columns in DB:")
+    for col in columns:
+        print(f" - {col[1]} ({col[2]})")
+    
     conn.close()
 
     if not signers:
@@ -353,7 +361,6 @@ def merge_route(pdf_filename):
         logging.exception("❌ Merge failed:")
         flash(f"❌ Merge failed: {str(e)}")
         return redirect(url_for('get_signers', pdf_filename=pdf_filename))
- 
 
 
 @app.route('/set_merge_folder', methods=['POST'])
