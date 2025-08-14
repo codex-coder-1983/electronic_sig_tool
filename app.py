@@ -31,6 +31,8 @@ from pyngrok import ngrok, conf
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'signers.db')
 
+init_db()
+
 print(f"DB path: {DB_PATH}")
 print(f"DB exists? {os.path.exists(DB_PATH)}")
 
@@ -586,9 +588,7 @@ with app.test_request_context():
 @app.errorhandler(404)
 def page_not_found(e):
     app.logger.warning(f"404: {request.method} {request.path}")
-    return "Not Found", 404
-
-init_db()        
+    return "Not Found", 404    
 
 if __name__ == '__main__':
 
