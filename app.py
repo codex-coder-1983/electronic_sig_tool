@@ -406,6 +406,12 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
 
     # Open PDF
     doc = fitz.open(base_pdf_path)
+    print(f"PDF has {len(doc)} pages")
+
+    for signer in signers:
+        print(f"Signer: {signer['name']}, page in DB: {signer['page']}")
+        if signer['page'] >= len(doc):
+            print(f"⚠️ Invalid page number for {signer['name']}")    
 
     # Determine preview image path
     img_preview_name = os.path.basename(base_pdf_path).replace(".pdf", "_preview.png")
