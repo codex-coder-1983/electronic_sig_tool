@@ -324,6 +324,9 @@ def set_signature_positions(pdf):
 
 @app.route('/merge/<pdf_filename>', methods=['POST'])
 def merge_route(pdf_filename):
+    print("🔍 merge_route triggered with", pdf_filename)
+    print("📨 Request Content-Type:", request.content_type)
+    
     downloads_dir = str(Path.home() / "Downloads")
     os.makedirs(downloads_dir, exist_ok=True)
 
