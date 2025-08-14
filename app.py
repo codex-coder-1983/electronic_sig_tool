@@ -341,14 +341,14 @@ def merge_route(pdf_filename):
     for row in all_rows:
         print(dict(row))
 
-    # Step 2: Your filtered query
+    # Step 2: Fetch only signed ones (but allow page NULL)
     c.execute("""
         SELECT name, email, page, x, y, signature_path, sig_width, sig_height
         FROM signers
-        WHERE pdf_filename=? AND has_signed=1 AND page IS NOT NULL
+        WHERE pdf_filename=? AND has_signed=1
     """, (pdf_filename,))
     
-    signers = c.fetchall()
+    rows = c.fetchall()
     
     # Debug: print DB schema
     c.execute("PRAGMA table_info(signers)")
@@ -359,19 +359,23 @@ def merge_route(pdf_filename):
     
     conn.close()
 
-    # Step 3: Explain why empty
+    # ✅ Apply defaults so merge function always has values
+    signers = []
+    for r in rows:
+        s = dict(r)
+        if s["page"] is None:
+            print(f"⚠️ {s['email']} has page=NULL → defaulting to 0")
+            s["page"] = 0
+        if s["sig_width"] is None:
+            print(f"⚠️ {s['email']} has sig_width=NULL → defaulting to 150")
+            s["sig_width"] = 150
+        if s["sig_height"] is None:
+            print(f"⚠️ {s['email']} has sig_height=NULL → defaulting to 50")
+            s["sig_height"] = 50
+        signers.append(s)
+
     if not signers:
-        print("🚨 No rows matched the filter.")
-        for row in all_rows:
-            reasons = []
-            if row["has_signed"] != 1:
-                reasons.append(f"has_signed={row['has_signed']}")
-            if row["page"] is None:
-                reasons.append("page=NULL")
-            if reasons:
-                print(f"   ❌ {row['email']} excluded because: {', '.join(reasons)}")
-            else:
-                print(f"   ✅ {row['email']} meets conditions, should have matched.")
+        print("🚨 No signed signers to merge.")
         flash("❌ No signed signatures to merge yet.")
         return redirect(url_for('get_signers', pdf_filename=pdf_filename))
 
@@ -385,6 +389,7 @@ def merge_route(pdf_filename):
         logging.exception("❌ Merge failed:")
         flash(f"❌ Merge failed: {str(e)}")
         return redirect(url_for('get_signers', pdf_filename=pdf_filename))
+
 
 
 @app.route('/set_merge_folder', methods=['POST'])
