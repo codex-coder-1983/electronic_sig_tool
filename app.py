@@ -374,10 +374,11 @@ def merge_route(pdf_filename):
             s["sig_height"] = 50
         signers.append(s)
 
+    # ⬇️ First redirect (when no signed rows)
     if not signers:
         print("🚨 No signed signers to merge.")
         flash("❌ No signed signatures to merge yet.")
-        return redirect(url_for('get_signers', pdf_filename=pdf_filename))
+        return redirect(url_for('done_placing_signers', pdf=pdf_filename))
 
     try:
         output_path = merge_pdf_signatures(pdf_filename, signers, output_folder='signed')
@@ -388,7 +389,8 @@ def merge_route(pdf_filename):
     except Exception as e:
         logging.exception("❌ Merge failed:")
         flash(f"❌ Merge failed: {str(e)}")
-        return redirect(url_for('get_signers', pdf_filename=pdf_filename))
+        # ⬇️ Second redirect (when merge crashes)
+        return redirect(url_for('done_placing_signers', pdf=pdf_filename))
 
 
 
