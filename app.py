@@ -445,22 +445,19 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
     doc = fitz.open(base_pdf_path)
     logger.info(f"📑 PDF has {len(doc)} pages")
 
+    # Convert signers rows into dicts
     signers = [dict(row) for row in signers]
-    for signer in signers:
-        logger.info(f"👤 Signer: {signer['name']}, page in DB: {signer['page']}")
-        if signer['page'] >= len(doc):
-            logger.warning(f"⚠️ Invalid page number for {signer['name']}")    
 
-    # Determine preview image path
+    # Preview image path (for scaling)
     img_preview_name = os.path.basename(base_pdf_path).replace(".pdf", "_preview.png")
     img_preview_path = os.path.join(os.path.dirname(base_pdf_path), img_preview_name)
 
-    # ✅ Regenerate preview image if missing
+    # ✅ Regenerate preview if missing
     if not os.path.exists(img_preview_path):
         logger.warning(f"⚠️ Preview image not found. Attempting to regenerate: {img_preview_path}")
         try:
             from pdf2image import convert_from_path
-            POPPLER_PATH = '/usr/bin'  # Adjust for your environment
+            POPPLER_PATH = '/usr/bin'  # adjust if needed
             images = convert_from_path(base_pdf_path, first_page=1, last_page=1, poppler_path=POPPLER_PATH)
             images[0].save(img_preview_path, 'PNG')
             logger.info(f"✅ Preview image regenerated: {img_preview_path}")
@@ -468,11 +465,9 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
             logger.error(f"❌ Failed to regenerate preview image: {e}")
             raise FileNotFoundError(f"Could not regenerate preview image: {img_preview_path}")
 
-    # Load preview to get scaling reference
+    # Load preview for scaling
     img = Image.open(img_preview_path)
     img_width, img_height = img.size
-    logger.info(f"🖼️ Preview image size: width={img_width}, height={img_height}")
-
     points_offset = 5
 
     # Loop through all signers
@@ -480,48 +475,49 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
         sig_path = signer['signature_path']
         if not sig_path or not os.path.exists(sig_path):
             logger.error(f"❌ Skipping signer — signature file missing: {sig_path}")
-            continue        
+            continue
 
-        page_number = signer['page']
+        # ✅ Defaults if DB values are NULL
+        page_number = signer['page'] if signer['page'] is not None else 0
+        sig_width   = signer['sig_width'] if signer['sig_width'] is not None else 150
+        sig_height  = signer['sig_height'] if signer['sig_height'] is not None else 50
+
         x = signer['x']
         y = signer['y']
-        sig_width = signer['sig_width']
-        sig_height = signer['sig_height']
+
+        logger.info(
+            f"👤 Signer '{signer['name']}' → page={page_number}, "
+            f"x={x}, y={y}, sig_width={sig_width}, sig_height={sig_height}"
+        )
 
         page = doc[page_number]
-        page_rotation = page.rotation
         page_width = page.rect.width
         page_height = page.rect.height
+        logger.info(f"📏 Page size: width={page_width}, height={page_height}")
 
-        logger.info(f"➡️ Processing {signer['name']} on page {page_number}")
-        logger.info(f"   Original coords (px): x={x}, y={y}, sig_w={sig_width}, sig_h={sig_height}")
-        logger.info(f"   Page size: width={page_width}, height={page_height}, rotation={page_rotation}°")
-
-        # Convert pixel coords to PDF points
+        # Convert pixel coords to PDF coords
         x_pdf = x * page_width / img_width
         y_pdf = y * page_height / img_height
-        logger.info(f"   Converted coords: x_pdf={x_pdf:.2f}, y_pdf={y_pdf:.2f}")
+        logger.info(f"🔄 Converted to PDF coords: x_pdf={x_pdf}, y_pdf={y_pdf}")
 
-        # Signature size in PDF points
+        # Signature size in PDF coords
         sig_width_pts = sig_width * page_width / img_width
         sig_height_pts = sig_height * page_height / img_height
-        logger.info(f"   Signature size (pts): width={sig_width_pts:.2f}, height={sig_height_pts:.2f}")
 
-        # Place signature (force upright)
         sig_rect = fitz.Rect(x_pdf, y_pdf - sig_height_pts, x_pdf + sig_width_pts, y_pdf)
-        logger.info(f"   Signature rect: {sig_rect}")
-        page.insert_image(sig_rect, filename=sig_path, rotate=0, keep_proportion=True)
-        logger.info("   ✅ Signature inserted (upright)")
+        page.insert_image(sig_rect, filename=sig_path, rotate=0)
+        logger.info(f"🖊️ Signature inserted at: {sig_rect}")
 
-        # Add date to the right of signature
+        # Add date (upright) to the right of signature
         current_date = datetime.now().strftime("%B %d, %Y")
         date_x = x_pdf + sig_width_pts + points_offset
-        date_y = y_pdf + sig_height_pts / 2
+        date_y = y_pdf - sig_height_pts / 2
+
         date_box_width = 100
         date_box_height = 20
-        date_rect = fitz.Rect(date_x, date_y, date_x + date_box_width, date_y + date_box_height)
+        date_rect = fitz.Rect(date_x, date_y - date_box_height/2,
+                              date_x + date_box_width, date_y + date_box_height/2)
 
-        logger.info(f"   Date rect: {date_rect}")
         page.insert_textbox(
             date_rect,
             current_date,
@@ -529,9 +525,9 @@ def merge_pdf_signatures(base_pdf_path, signers, output_folder='signed'):
             fontname="helv",
             color=(0, 0, 0),
             align=0,
-            rotate=0
+            rotate=0  # ✅ ensures upright orientation
         )
-        logger.info(f"   ✅ Date inserted: '{current_date}' (upright)")
+        logger.info(f"📅 Date inserted at rect: {date_rect}")
 
     # Save final signed PDF
     os.makedirs(output_folder, exist_ok=True)
